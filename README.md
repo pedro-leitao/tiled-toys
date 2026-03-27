@@ -13,7 +13,7 @@ Small graphical terminal toys written in Go:
 - `gbonsai`: animated bonsai tree growth
 - `glife`: animated Conway's Game of Life with age-based coloring
 
-Both are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [iTerm2](https://iterm2.com/), [Alacritty](https://github.com/alacritty/alacritty), [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)).
+Both are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)).
 
 ## System requirements
 
