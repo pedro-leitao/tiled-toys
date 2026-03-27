@@ -15,4 +15,5 @@ coverage.out
 # Project binaries
 /gbonsai/gbonsai
 /glife/glife
-/glife/golife
+/gmandelbrot/gmandelbrot
+/glorenz/glorenz
