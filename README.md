@@ -3,6 +3,7 @@
 <p align="center">
 	<img src="images/gbonsai.png" alt="gbonsai preview" width="360" />
 	<img src="images/glife.png" alt="glife preview" width="360" />
+	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="360" />
 </p>
 <p align="center">
 	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration
@@ -14,7 +15,7 @@ Small graphical terminal toys written in Go:
 - `glife`: animated Conway's Game of Life with age-based coloring
 - `gmandelbrot`: animated Mandelbrot fractal visualization with iterative low-to-high detail refinement
 
-Both are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)).
+All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
 ## System requirements
 
@@ -25,9 +26,9 @@ Both are toy applications intended for **compatible terminals** that support the
 
 ## Repository layout
 
-- [`gbonsai/`](gbonsai/) — standalone Go module + Makefile
-- [`glife/`](glife/) — standalone Go module + Makefile
-- [`gmandelbrot/`](gmandelbrot/) — standalone Go module + Makefile
+- [`gbonsai/`](gbonsai/)
+- [`glife/`](glife/)
+- [`gmandelbrot/`](gmandelbrot/)
 
 ## Build
 

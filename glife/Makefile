@@ -6,6 +6,7 @@ DESTDIR?=
 all: build
 
 build:
+	go mod tidy
 	go build -ldflags="-s -w" -o $(APP_NAME) main.go
 
 install: build
