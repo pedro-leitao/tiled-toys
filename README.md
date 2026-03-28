@@ -6,9 +6,10 @@
 	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="360" />
 	<img src="images/glorenz.png" alt="glorenz preview" width="360" />
 	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="360" />
+	<img src="images/gbrain.png" alt="gbrain preview" width="360" />
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer
 </p>
 
 Small graphical terminal toys written in Go:
@@ -18,6 +19,7 @@ Small graphical terminal toys written in Go:
 - `gmandelbrot`: animated Mandelbrot fractal visualization with iterative low-to-high detail refinement
 - `glorenz`: animated chaotic strange attractors (Lorenz and Rössler) with a 3D-to-2D terminal projection
 - `gmagnetic`: animated charged particles flowing through a synthetic magnetic dipole field
+- `gbrain`: animated ray-marched NIfTI brain volume rendering using opacity compositing
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
@@ -35,6 +37,7 @@ All are toy applications intended for **compatible terminals** that support the 
 - [`gmandelbrot/`](gmandelbrot/)
 - [`glorenz/`](glorenz/)
 - [`gmagnetic/`](gmagnetic/)
+- [`gbrain/`](gbrain/)
 
 ## Build
 
@@ -45,6 +48,7 @@ Build each app from its directory:
 - `cd gmandelbrot && make build`
 - `cd glorenz && make build`
 - `cd gmagnetic && make build`
+- `cd gbrain && make build`
 
 Or from repo root:
 
@@ -53,6 +57,7 @@ Or from repo root:
 - `make -C gmandelbrot build`
 - `make -C glorenz build`
 - `make -C gmagnetic build`
+- `make -C gbrain build`
 
 ## Install
 
@@ -65,6 +70,7 @@ Default install (to `$HOME/bin`):
 - `make -C gmandelbrot install`
 - `make -C glorenz install`
 - `make -C gmagnetic install`
+- `make -C gbrain install`
 
 Custom prefix:
 
@@ -73,6 +79,7 @@ Custom prefix:
 - `make -C gmandelbrot install PREFIX=/usr/local`
 - `make -C glorenz install PREFIX=/usr/local`
 - `make -C gmagnetic install PREFIX=/usr/local`
+- `make -C gbrain install PREFIX=/usr/local`
 
 Package staging example:
 
@@ -81,6 +88,7 @@ Package staging example:
 - `make -C gmandelbrot install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C glorenz install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C gmagnetic install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
+- `make -C gbrain install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 ## Run
 
@@ -141,6 +149,38 @@ Useful flags:
 - `-max-block` initial coarse pixel block size at the start of refinement
 - `-iter-base` base Mandelbrot iteration budget at coarse refinement
 - `-iter-max` maximum Mandelbrot iteration budget at full refinement
+- `-frame-stride` render every N animation steps
+
+### gbrain
+
+`gbrain` will render 3D brain volumes from NIfTI files using ray marching and optional GPU acceleration (`-engine=auto|gpu|cpu`).
+
+From repo root:
+
+- `make -C gbrain run`
+
+Direct binary example:
+
+- `./gbrain/gbrain -nii=./gbrain/average305_t1_tal_lin.nii -spm=90`
+
+Useful flags:
+
+- `-nii` path to `.nii` or `.nii.gz` file
+- `-rotation-speed` camera orbit speed (radians/second)
+- `-zoom` camera zoom (`1.0` fits whole model; `>1` zooms in; `<1` zooms out)
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`)
+- `-palette-density` density palette override (defaults to `-palette`)
+- `-palette-edge` edge palette used by `-color-mode=density-edge`
+- `-color-mode` voxel colouring mode (`density`, `edge`, `density-edge`, `depth`, `normal`, `opacity`)
+- `-engine` render engine (`auto`, `cpu`, `gpu`)
+- `-opacity` base volume opacity (higher = less transparent)
+- `-iso` soft density threshold to reveal structure boundaries
+- `-edge-boost` edge/detail contrast multiplier
+- `-tilt-max` max random tilt in degrees
+- `-angle-change-sec` seconds between random tilt targets
+- `-render-scale` internal render scale (lower = faster)
+- `-samples` ray marching samples per ray
+- `-max-dim` max loaded volume dimension (downsample for performance)
 - `-frame-stride` render every N animation steps
 
 ### glorenz
