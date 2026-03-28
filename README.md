@@ -84,6 +84,8 @@ Package staging example:
 
 ## Run
 
+> For all the toys, to ensure low CPU consumption, use `--frame-stride` larger than 1 - PNG encoding for terminal graphics can be CPU-intensive.
+
 ### gbonsai
 
 From repo root:
@@ -119,6 +121,8 @@ Useful flags:
 
 ### gmandelbrot
 
+`gmandelbrot` will pick a random interesting area of the Mandelbrot set. It will also use GPU acceleration via [GoGPU](https://github.com/rajveermalviya/go-webgpu) (`--engine=auto|gpu|cpu`).
+
 From repo root:
 
 - `make -C gmandelbrot run`
@@ -140,6 +144,8 @@ Useful flags:
 - `-frame-stride` render every N animation steps
 
 ### glorenz
+
+`glorenz` will use GPU acceleration via [GoGPU](https://github.com/rajveermalviya/go-webgpu) (`--engine=auto|gpu|cpu`).
 
 From repo root:
 

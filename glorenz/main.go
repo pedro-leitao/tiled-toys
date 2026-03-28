@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"image"
@@ -16,6 +17,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/rajveermalviya/go-webgpu/wgpu"
 )
 
 type Winsize struct {
@@ -36,6 +39,22 @@ type particle struct {
 }
 
 type paletteType int
+type renderEngine int
+
+type gpuIntegrator struct {
+	instance        *wgpu.Instance
+	adapter         *wgpu.Adapter
+	device          *wgpu.Device
+	queue           *wgpu.Queue
+	pipeline        *wgpu.ComputePipeline
+	bindGroupLayout *wgpu.BindGroupLayout
+	paramsBuffer    *wgpu.Buffer
+	stateBuffer     *wgpu.Buffer
+	readbackBuffer  *wgpu.Buffer
+	bindGroup       *wgpu.BindGroup
+	count           int
+	bufferSize      uint64
+}
 
 const (
 	paletteTwilight paletteType = iota
@@ -43,6 +62,12 @@ const (
 	paletteIce
 	paletteForest
 	paletteMono
+)
+
+const (
+	renderEngineAuto renderEngine = iota
+	renderEngineCPU
+	renderEngineGPU
 )
 
 var framePNGEncoder = png.Encoder{CompressionLevel: png.BestSpeed}
@@ -58,6 +83,7 @@ func main() {
 	substeps := flag.Int("substeps", 4, "Integration updates per step")
 	rotationSpeed := flag.Float64("rotation-speed", 0.28, "Camera rotation speed")
 	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono")
+	engineName := flag.String("engine", "auto", "Integrator engine: auto|cpu|gpu")
 	frameStride := flag.Int("frame-stride", 1, "Render one frame every N simulation steps")
 	flag.Parse()
 
@@ -92,6 +118,7 @@ func main() {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	system := parseSystem(*systemName)
 	palette := parsePalette(*paletteName)
+	engine := parseRenderEngine(*engineName)
 	parts := make([]particle, *cloudSize)
 	for i := range parts {
 		parts[i].trail = make([]vec3, *trailLen)
@@ -104,6 +131,31 @@ func main() {
 		for t := 0; t < *trailLen; t++ {
 			stepParticle(&parts[i], system, *dt)
 			addTrail(&parts[i])
+		}
+	}
+
+	var gpu *gpuIntegrator
+	if engine != renderEngineCPU {
+		integrator, err := newGPUIntegrator(len(parts))
+		if err != nil {
+			if engine == renderEngineGPU {
+				fmt.Fprintf(os.Stderr, "failed to initialize GPU integrator: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "GPU integrator unavailable (%v), falling back to CPU\n", err)
+		} else {
+			if err := integrator.Upload(parts); err != nil {
+				integrator.Close()
+				if engine == renderEngineGPU {
+					fmt.Fprintf(os.Stderr, "failed to upload initial particle state to GPU: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Fprintf(os.Stderr, "GPU upload failed (%v), falling back to CPU\n", err)
+			} else {
+				gpu = integrator
+				fmt.Fprintln(os.Stderr, "using WebGPU integrator")
+				defer gpu.Close()
+			}
 		}
 	}
 
@@ -237,10 +289,34 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			for s := 0; s < *substeps; s++ {
-				for i := range parts {
-					stepParticle(&parts[i], system, *dt)
-					addTrail(&parts[i])
+			if gpu != nil {
+				ok := true
+				for s := 0; s < *substeps; s++ {
+					if err := gpu.StepAndRead(parts, system, float32(*dt)); err != nil {
+						fmt.Fprintf(os.Stderr, "GPU integration failed (%v), falling back to CPU\n", err)
+						gpu.Close()
+						gpu = nil
+						ok = false
+						break
+					}
+					for i := range parts {
+						addTrail(&parts[i])
+					}
+				}
+				if !ok {
+					for s := 0; s < *substeps; s++ {
+						for i := range parts {
+							stepParticle(&parts[i], system, *dt)
+							addTrail(&parts[i])
+						}
+					}
+				}
+			} else {
+				for s := 0; s < *substeps; s++ {
+					for i := range parts {
+						stepParticle(&parts[i], system, *dt)
+						addTrail(&parts[i])
+					}
 				}
 			}
 			frame++
@@ -277,6 +353,297 @@ func parsePalette(s string) paletteType {
 		return paletteTwilight
 	}
 }
+
+func parseRenderEngine(s string) renderEngine {
+	s = strings.TrimSpace(strings.ToLower(s))
+	switch s {
+	case "cpu":
+		return renderEngineCPU
+	case "gpu", "webgpu", "wgpu":
+		return renderEngineGPU
+	default:
+		return renderEngineAuto
+	}
+}
+
+func systemID(system string) uint32 {
+	if system == "rossler" {
+		return 1
+	}
+	return 0
+}
+
+func newGPUIntegrator(count int) (*gpuIntegrator, error) {
+	r := &gpuIntegrator{count: count}
+	r.instance = wgpu.CreateInstance(nil)
+	if r.instance == nil {
+		return nil, fmt.Errorf("wgpu instance creation failed")
+	}
+
+	adapter, err := r.instance.RequestAdapter(nil)
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.adapter = adapter
+
+	device, err := r.adapter.RequestDevice(nil)
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.device = device
+	r.queue = r.device.GetQueue()
+
+	module, err := r.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "lorenz-integrator.wgsl",
+		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{
+			Code: attractorIntegrateWGSL,
+		},
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	defer module.Release()
+
+	pipeline, err := r.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: "lorenz-integrator-pipeline",
+		Compute: wgpu.ProgrammableStageDescriptor{
+			Module:     module,
+			EntryPoint: "main",
+		},
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.pipeline = pipeline
+	r.bindGroupLayout = r.pipeline.GetBindGroupLayout(0)
+
+	paramsBuffer, err := r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "attractor-params",
+		Size:  16,
+		Usage: wgpu.BufferUsage_Uniform | wgpu.BufferUsage_CopyDst,
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.paramsBuffer = paramsBuffer
+
+	bufferSize := uint64(count) * 16
+	stateBuffer, err := r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "attractor-state",
+		Size:  bufferSize,
+		Usage: wgpu.BufferUsage_Storage | wgpu.BufferUsage_CopyDst | wgpu.BufferUsage_CopySrc,
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.stateBuffer = stateBuffer
+
+	readbackBuffer, err := r.device.CreateBuffer(&wgpu.BufferDescriptor{
+		Label: "attractor-readback",
+		Size:  bufferSize,
+		Usage: wgpu.BufferUsage_MapRead | wgpu.BufferUsage_CopyDst,
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.readbackBuffer = readbackBuffer
+
+	bindGroup, err := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: r.bindGroupLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: r.paramsBuffer, Size: 16},
+			{Binding: 1, Buffer: r.stateBuffer, Size: wgpu.WholeSize},
+		},
+	})
+	if err != nil {
+		r.Close()
+		return nil, err
+	}
+	r.bindGroup = bindGroup
+	r.bufferSize = bufferSize
+
+	return r, nil
+}
+
+func (r *gpuIntegrator) Upload(parts []particle) error {
+	if len(parts) != r.count {
+		return fmt.Errorf("particle count mismatch: got %d, expected %d", len(parts), r.count)
+	}
+	raw := make([]byte, len(parts)*16)
+	for i := range parts {
+		o := i * 16
+		binary.LittleEndian.PutUint32(raw[o+0:], math.Float32bits(float32(parts[i].pos.x)))
+		binary.LittleEndian.PutUint32(raw[o+4:], math.Float32bits(float32(parts[i].pos.y)))
+		binary.LittleEndian.PutUint32(raw[o+8:], math.Float32bits(float32(parts[i].pos.z)))
+		binary.LittleEndian.PutUint32(raw[o+12:], math.Float32bits(1.0))
+	}
+	return r.queue.WriteBuffer(r.stateBuffer, 0, raw)
+}
+
+func (r *gpuIntegrator) StepAndRead(parts []particle, system string, dt float32) error {
+	if len(parts) != r.count {
+		return fmt.Errorf("particle count mismatch: got %d, expected %d", len(parts), r.count)
+	}
+
+	paramsRaw := make([]byte, 16)
+	binary.LittleEndian.PutUint32(paramsRaw[0:], uint32(r.count))
+	binary.LittleEndian.PutUint32(paramsRaw[4:], systemID(system))
+	binary.LittleEndian.PutUint32(paramsRaw[8:], math.Float32bits(dt))
+	if err := r.queue.WriteBuffer(r.paramsBuffer, 0, paramsRaw); err != nil {
+		return err
+	}
+
+	encoder, err := r.device.CreateCommandEncoder(&wgpu.CommandEncoderDescriptor{Label: "attractor-step-encoder"})
+	if err != nil {
+		return err
+	}
+	defer encoder.Release()
+
+	pass := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{Label: "attractor-step-pass"})
+	pass.SetPipeline(r.pipeline)
+	pass.SetBindGroup(0, r.bindGroup, nil)
+	const workgroup = 64
+	groups := uint32((r.count + workgroup - 1) / workgroup)
+	pass.DispatchWorkgroups(groups, 1, 1)
+	if err := pass.End(); err != nil {
+		pass.Release()
+		return err
+	}
+	pass.Release()
+
+	encoder.CopyBufferToBuffer(r.stateBuffer, 0, r.readbackBuffer, 0, r.bufferSize)
+
+	cmd, err := encoder.Finish(nil)
+	if err != nil {
+		return err
+	}
+	defer cmd.Release()
+	r.queue.Submit(cmd)
+
+	var status wgpu.BufferMapAsyncStatus
+	mapped := false
+	if err := r.readbackBuffer.MapAsync(wgpu.MapMode_Read, 0, r.bufferSize, func(s wgpu.BufferMapAsyncStatus) {
+		status = s
+		mapped = true
+	}); err != nil {
+		return err
+	}
+	r.device.Poll(true, nil)
+	if !mapped {
+		return fmt.Errorf("readback map callback not received")
+	}
+	if status != wgpu.BufferMapAsyncStatus_Success {
+		return fmt.Errorf("readback map failed: %v", status)
+	}
+
+	data := wgpu.FromBytes[float32](r.readbackBuffer.GetMappedRange(0, uint(r.bufferSize)))
+	for i := range parts {
+		base := i * 4
+		parts[i].pos = vec3{float64(data[base+0]), float64(data[base+1]), float64(data[base+2])}
+	}
+	r.readbackBuffer.Unmap()
+
+	return nil
+}
+
+func (r *gpuIntegrator) Close() {
+	if r.bindGroup != nil {
+		r.bindGroup.Release()
+		r.bindGroup = nil
+	}
+	if r.readbackBuffer != nil {
+		r.readbackBuffer.Release()
+		r.readbackBuffer = nil
+	}
+	if r.stateBuffer != nil {
+		r.stateBuffer.Release()
+		r.stateBuffer = nil
+	}
+	if r.paramsBuffer != nil {
+		r.paramsBuffer.Release()
+		r.paramsBuffer = nil
+	}
+	if r.bindGroupLayout != nil {
+		r.bindGroupLayout.Release()
+		r.bindGroupLayout = nil
+	}
+	if r.pipeline != nil {
+		r.pipeline.Release()
+		r.pipeline = nil
+	}
+	if r.queue != nil {
+		r.queue.Release()
+		r.queue = nil
+	}
+	if r.device != nil {
+		r.device.Release()
+		r.device = nil
+	}
+	if r.adapter != nil {
+		r.adapter.Release()
+		r.adapter = nil
+	}
+	if r.instance != nil {
+		r.instance.Release()
+		r.instance = nil
+	}
+}
+
+const attractorIntegrateWGSL = `
+struct Params {
+	count: u32,
+	system: u32,
+	dt: f32,
+	_pad0: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read_write> state: array<vec4<f32>>;
+
+@compute @workgroup_size(64, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+	let i = gid.x;
+	if (i >= params.count) {
+		return;
+	}
+
+	var p = state[i];
+	let x = p.x;
+	let y = p.y;
+	let z = p.z;
+
+	var dx: f32;
+	var dy: f32;
+	var dz: f32;
+
+	if (params.system == 1u) {
+		dx = -y - z;
+		dy = x + 0.2 * y;
+		dz = 0.2 + z * (x - 5.7);
+	} else {
+		dx = 10.0 * (y - x);
+		dy = x * (28.0 - z) - y;
+		dz = x * y - (8.0 / 3.0) * z;
+	}
+
+	state[i] = vec4<f32>(
+		x + dx * params.dt,
+		y + dy * params.dt,
+		z + dz * params.dt,
+		1.0,
+	);
+}
+`
 
 func stepParticle(p *particle, system string, dt float64) {
 	x, y, z := p.pos.x, p.pos.y, p.pos.z
