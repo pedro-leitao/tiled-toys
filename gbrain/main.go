@@ -74,6 +74,7 @@ const (
 	paletteIce
 	paletteForest
 	paletteMono
+	paletteViridis
 )
 
 const (
@@ -101,15 +102,15 @@ var frameBuffer bytes.Buffer
 var frameBase64Buffer []byte
 
 func main() {
-	niftiPath := flag.String("nii", "./average305_t1_tal_lin.nii", "Path to NIfTI file (.nii or .nii.gz)")
+	niftiPath := flag.String("nii", "./MR_Gd.nii", "Path to NIfTI file (.nii or .nii.gz)")
 	spm := flag.Int("spm", 90, "Simulation steps per minute")
 	rotationSpeed := flag.Float64("rotation-speed", 0.22, "Camera orbit speed in radians per second")
 	zoom := flag.Float64("zoom", 1.0, "Camera zoom (1.0 fits whole model, >1 zooms in, <1 zooms out)")
-	opacity := flag.Float64("opacity", 0.24, "Base volume opacity (0..2)")
+	opacity := flag.Float64("opacity", 0.9, "Optical depth scale for Beer-Lambert volume integration (0..2)")
 	renderScale := flag.Float64("render-scale", 0.82, "Internal render scale (0.2..1.0)")
 	samples := flag.Int("samples", 240, "Maximum ray-marching samples per ray")
 	maxDim := flag.Int("max-dim", 180, "Maximum loaded volume dimension (downsampled for speed)")
-	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono")
+	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono|viridis")
 	paletteDensityName := flag.String("palette-density", "", "Density palette override (defaults to -palette)")
 	paletteEdgeName := flag.String("palette-edge", "fire", "Edge palette used by -color-mode=density-edge")
 	colorModeName := flag.String("color-mode", "density", "Color mode: density|edge|density-edge|depth|normal|opacity")
@@ -154,8 +155,8 @@ func main() {
 	if *opacity < 0.02 {
 		*opacity = 0.02
 	}
-	if *opacity > 2 {
-		*opacity = 2
+	if *opacity > 5 {
+		*opacity = 5
 	}
 	if *zoom <= 0 {
 		*zoom = 1.0
@@ -475,8 +476,8 @@ func renderVolume(img *image.RGBA, vol *volume, yaw, pitch, roll, fitMargin, opa
 	tanHalf := math.Tan(fovY * 0.5)
 
 	maxPath := math.Sqrt(3)
+	extinctionScale := 6.0 / maxPath
 	stepSize := maxPath / float64(samples)
-	baseAlpha := opacity * 0.66
 	gradStep := 1.35 / float64(maxInt(vol.nx, maxInt(vol.ny, vol.nz)))
 	lightDir := norm(add(forward, add(scale(right, -0.20), scale(up, 0.26))))
 
@@ -498,7 +499,6 @@ func renderVolume(img *image.RGBA, vol *volume, yaw, pitch, roll, fitMargin, opa
 			}
 
 			accR, accG, accB, accA := 0.0, 0.0, 0.0, 0.0
-			prev := 0.0
 			rangeLen := math.Max(t1-t0, 1e-9)
 			for t := t0; t < t1; t += stepSize {
 				p := add(cam, scale(dir, t))
@@ -507,19 +507,12 @@ func renderVolume(img *image.RGBA, vol *volume, yaw, pitch, roll, fitMargin, opa
 				wz := p.z + 0.5
 				d := sampleVolumeTrilinear(vol, u, v, wz)
 				if d <= iso*0.45 {
-					prev = d
 					continue
 				}
 
 				grad := sampleVolumeGradient(vol, u, v, wz, gradStep)
 				gmag := length3(grad)
 				edge := clampf(gmag*edgeBoost, 0, 1)
-
-				delta := d - prev
-				if delta < 0 {
-					delta = 0
-				}
-				prev = d
 
 				local := clampf((d-iso)/(1.0-iso), 0, 1)
 				n := norm(grad)
@@ -529,11 +522,13 @@ func renderVolume(img *image.RGBA, vol *volume, yaw, pitch, roll, fitMargin, opa
 				}
 				shade := 0.32 + 0.68*diff
 
-				a := baseAlpha * (0.10 + 0.90*local)
-				a *= 0.42 + edge*0.92
-				a *= 1.0 + delta*1.45
-				if a > 0.9 {
-					a = 0.9
+				// Beer–Lambert step opacity: a = 1 - exp(-sigma_t * ds)
+				// sigma_t is scaled by normalized local density.
+				localExt := math.Pow(local, 0.65)
+				sigmaT := opacity * extinctionScale * localExt
+				a := 1 - math.Exp(-sigmaT*stepSize)
+				if a <= 1e-6 {
+					continue
 				}
 
 				depth := clampf((t-t0)/rangeLen, 0, 1)
@@ -635,6 +630,8 @@ func parsePalette(s string) paletteType {
 		return paletteForest
 	case "mono", "monochrome", "grayscale", "grey", "gray":
 		return paletteMono
+	case "viridis":
+		return paletteViridis
 	default:
 		return paletteTwilight
 	}
@@ -706,6 +703,12 @@ func colorFromPalette(p paletteType, t float64) (float64, float64, float64) {
 	case paletteMono:
 		g := 0.08 + 0.92*t
 		return g, g, g
+	case paletteViridis:
+		return gradient3(t,
+			0.267004, 0.004874, 0.329415,
+			0.127568, 0.566949, 0.550556,
+			0.993248, 0.906157, 0.143936,
+		)
 	default: // twilight
 		return gradient3(t,
 			0.06, 0.03, 0.14,
@@ -1395,6 +1398,12 @@ fn color_from_palette(t_in: f32, palette: u32) -> vec3<f32> {
             let g = 0.08 + 0.92 * t;
             return vec3<f32>(g, g, g);
         }
+		case 5u {
+			return gradient3(t,
+				vec3<f32>(0.267004, 0.004874, 0.329415),
+				vec3<f32>(0.127568, 0.566949, 0.550556),
+				vec3<f32>(0.993248, 0.906157, 0.143936));
+		}
         default {
             return gradient3(t,
                 vec3<f32>(0.06, 0.03, 0.14),
@@ -1526,13 +1535,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         t_near = 0.0;
     }
 
-    let step_size = sqrt(3.0) / f32(max(1u, params.samples));
+	let max_path = sqrt(3.0);
+	let extinction_scale = 6.0 / max_path;
+	let step_size = max_path / f32(max(1u, params.samples));
     let grad_step = 1.35 / f32(max(params.nx, max(params.ny, params.nz)));
     let light_dir = safe_norm(forward + right * -0.20 + up * 0.26);
 
-    var acc = vec3<f32>(0.0);
-    var acc_a = 0.0;
-    var prev = 0.0;
+	var acc = vec3<f32>(0.0);
+	var acc_a = 0.0;
     var t = t_near;
 	let range_len = max(t_far - t_near, 1e-6);
     loop {
@@ -1546,24 +1556,26 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let w = p.z + 0.5;
         let d = sample_volume_trilinear(u, v, w);
         if (d <= params.iso * 0.45) {
-            prev = d;
             t = t + step_size;
             continue;
         }
 
         let grad = sample_gradient(u, v, w, grad_step);
         let edge = clamp01(length(grad) * params.edge_boost);
-        let delta = max(d - prev, 0.0);
-        prev = d;
 
         let local = clamp01((d - params.iso) / max(1e-4, 1.0 - params.iso));
         let n = safe_norm(grad);
         let shade = 0.32 + 0.68 * max(dot(n, light_dir), 0.0);
 
-        var a = params.opacity * 0.66 * (0.10 + 0.90 * local);
-        a = a * (0.42 + edge * 0.92);
-        a = a * (1.0 + delta * 1.45);
-        a = min(a, 0.9);
+		// Beer–Lambert step opacity: a = 1 - exp(-sigma_t * ds)
+		// sigma_t is scaled by normalized local density.
+		let local_ext = pow(local, 0.65);
+		let sigma_t = params.opacity * extinction_scale * local_ext;
+		let a = 1.0 - exp(-sigma_t * step_size);
+		if (a <= 1e-6) {
+			t = t + step_size;
+			continue;
+		}
 
 		let depth = clamp01((t - t_near) / range_len);
 		let base_col = color_from_mode(params.color_mode, params.palette_density, params.palette_edge, local, edge, depth, n, a);

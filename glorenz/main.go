@@ -62,6 +62,7 @@ const (
 	paletteIce
 	paletteForest
 	paletteMono
+	paletteViridis
 )
 
 const (
@@ -82,7 +83,7 @@ func main() {
 	dt := flag.Float64("dt", 0.005, "Integrator step size")
 	substeps := flag.Int("substeps", 4, "Integration updates per step")
 	rotationSpeed := flag.Float64("rotation-speed", 0.28, "Camera rotation speed")
-	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono")
+	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono|viridis")
 	engineName := flag.String("engine", "auto", "Integrator engine: auto|cpu|gpu")
 	frameStride := flag.Int("frame-stride", 1, "Render one frame every N simulation steps")
 	flag.Parse()
@@ -349,6 +350,8 @@ func parsePalette(s string) paletteType {
 		return paletteForest
 	case "mono", "monochrome":
 		return paletteMono
+	case "viridis":
+		return paletteViridis
 	default:
 		return paletteTwilight
 	}
@@ -709,6 +712,18 @@ func colorFromPalette(p paletteType, hue, trailT, fade float64) color.RGBA {
 		gMono := clamp01(0.06 + 0.92*t + 0.06*pulse)
 		v := clamp01(gMono * fade)
 		return color.RGBA{R: uint8(v*255 + 0.5), G: uint8(v*255 + 0.5), B: uint8(v*255 + 0.5), A: 220}
+	case paletteViridis:
+		if t < 0.5 {
+			u := t * 2.0
+			r = 0.267004 + (0.127568-0.267004)*u
+			g = 0.004874 + (0.566949-0.004874)*u
+			b = 0.329415 + (0.550556-0.329415)*u
+		} else {
+			u := (t - 0.5) * 2.0
+			r = 0.127568 + (0.993248-0.127568)*u
+			g = 0.566949 + (0.906157-0.566949)*u
+			b = 0.550556 + (0.143936-0.550556)*u
+		}
 	default:
 		// twilight with subtle per-particle hue variation
 		base := hsvToRGB(math.Mod(hue+0.08*t, 1.0), 0.85, clamp01(0.35+0.65*fade))

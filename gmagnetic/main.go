@@ -43,6 +43,7 @@ const (
 	paletteFire
 	paletteIce
 	paletteMono
+	paletteViridis
 )
 
 var framePNGEncoder = png.Encoder{CompressionLevel: png.BestSpeed}
@@ -58,7 +59,7 @@ func main() {
 	fieldStrength := flag.Float64("field-strength", 1.0, "Global magnetic field strength multiplier")
 	rotationSpeed := flag.Float64("rotation-speed", 0.28, "Magnetic field rotation speed")
 	convergeSpeed := flag.Float64("converge-speed", 0.08, "Pole convergence speed")
-	paletteName := flag.String("palette", "aurora", "Color palette: aurora|fire|ice|mono")
+	paletteName := flag.String("palette", "aurora", "Color palette: aurora|fire|ice|mono|viridis")
 	frameStride := flag.Int("frame-stride", 1, "Render one frame every N simulation steps")
 	flag.Parse()
 
@@ -184,6 +185,8 @@ func parsePalette(s string) paletteType {
 		return paletteIce
 	case "mono", "monochrome":
 		return paletteMono
+	case "viridis":
+		return paletteViridis
 	default:
 		return paletteAurora
 	}
@@ -385,6 +388,20 @@ func particleColor(p paletteType, charge, trailT, fade, speed float64, frame int
 	case paletteMono:
 		v := clamp01(0.08 + 0.88*t + 0.08*pulse)
 		r, g, b = v, v, v
+	case paletteViridis:
+		if t < 0.5 {
+			u := t * 2.0
+			r = 0.267004 + (0.127568-0.267004)*u
+			g = 0.004874 + (0.566949-0.004874)*u
+			b = 0.329415 + (0.550556-0.329415)*u
+		} else {
+			u := (t - 0.5) * 2.0
+			r = 0.127568 + (0.993248-0.127568)*u
+			g = 0.566949 + (0.906157-0.566949)*u
+			b = 0.550556 + (0.143936-0.550556)*u
+		}
+		r += 0.04 * kinetic
+		g += 0.03 * pulse
 	default:
 		if charge > 0 {
 			r = 0.20 + 0.58*t + 0.12*kinetic

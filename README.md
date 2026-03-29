@@ -41,6 +41,10 @@ All are toy applications intended for **compatible terminals** that support the 
 
 ## Build
 
+Build all toys from the repository root:
+
+- `make build`
+
 Build each app from its directory:
 
 - `cd gbonsai && make build`
@@ -61,7 +65,16 @@ Or from repo root:
 
 ## Install
 
+Install all toys from the repository root (default `$HOME/bin`):
+
+- `make install`
+
 Both Makefiles support `PREFIX`, `BINDIR`, and `DESTDIR`.
+
+Install all toys with custom paths from the repository root:
+
+- `make install PREFIX=/usr/local`
+- `make install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 Default install (to `$HOME/bin`):
 
@@ -142,7 +155,7 @@ Direct binary example:
 Useful flags:
 
 - `-spm` animation steps per minute
-- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`)
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
 - `-math-mode` Mandelbrot kernel (`fixed` for faster integer math, or `float`)
 - `-refine-steps` number of steps to refine from coarse to detailed rendering
 - `-hold-steps` how long to linger after full refinement before switching area
@@ -168,7 +181,7 @@ Useful flags:
 - `-nii` path to `.nii` or `.nii.gz` file
 - `-rotation-speed` camera orbit speed (radians/second)
 - `-zoom` camera zoom (`1.0` fits whole model; `>1` zooms in; `<1` zooms out)
-- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`)
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
 - `-palette-density` density palette override (defaults to `-palette`)
 - `-palette-edge` edge palette used by `-color-mode=density-edge`
 - `-color-mode` voxel colouring mode (`density`, `edge`, `density-edge`, `depth`, `normal`, `opacity`)
@@ -198,7 +211,7 @@ Direct binary example:
 Useful flags:
 
 - `-system` attractor equations (`lorenz` or `rossler`)
-- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`)
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
 - `-cloud` number of nearby particles rendered as a point cloud
 - `-trail` trail length per particle
 - `-spm` simulation steps per minute
@@ -224,7 +237,7 @@ Useful flags:
 - `-field-strength` global magnetic field multiplier
 - `-rotation-speed` magnetic field rotation speed
 - `-converge-speed` speed at which the pole distance shrinks over time
-- `-palette` color palette (`aurora`, `fire`, `ice`, `mono`)
+- `-palette` color palette (`aurora`, `fire`, `ice`, `mono`, `viridis`)
 - `-spm` simulation steps per minute
 - `-substeps` integration updates per simulation step
 - `-dt` integration step size

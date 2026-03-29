@@ -82,6 +82,7 @@ const (
 	paletteIce
 	paletteForest
 	paletteMono
+	paletteViridis
 )
 
 const (
@@ -148,7 +149,7 @@ var focusPoints = []FocusPoint{
 
 func main() {
 	spm := flag.Int("spm", 360, "Steps per minute")
-	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono")
+	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono|viridis")
 	mathModeName := flag.String("math-mode", "fixed", "Mandelbrot kernel: fixed|float")
 	engineName := flag.String("engine", "auto", "Render engine: auto|cpu|gpu")
 	refineSteps := flag.Int("refine-steps", 85, "How many steps to refine detail in the selected area")
@@ -617,6 +618,8 @@ func parsePalette(s string) paletteType {
 		return paletteForest
 	case "mono", "monochrome":
 		return paletteMono
+	case "viridis":
+		return paletteViridis
 	default:
 		return paletteTwilight
 	}
@@ -952,6 +955,22 @@ fn color_from_palette(t: f32, palette: u32) -> vec3<f32> {
             let g = clamp01(0.06 + 0.92 * t + 0.06 * pulse);
             return vec3<f32>(g, g, g);
         }
+		case 5u {
+			if (t < 0.5) {
+				let u = t * 2.0;
+				return vec3<f32>(
+					mix(0.267004, 0.127568, u),
+					mix(0.004874, 0.566949, u),
+					mix(0.329415, 0.550556, u),
+				);
+			}
+			let u = (t - 0.5) * 2.0;
+			return vec3<f32>(
+				mix(0.127568, 0.993248, u),
+				mix(0.566949, 0.906157, u),
+				mix(0.550556, 0.143936, u),
+			);
+		}
         default {
             return vec3<f32>(
                 clamp01(0.04 + 0.90 * t + 0.15 * spark),
@@ -1065,6 +1084,23 @@ func (v *Viewer) colorFromPalette(iterSmooth float64, maxIter int) color.RGBA {
 	case paletteMono:
 		g := clamp01(0.06 + 0.92*t + 0.06*pulse)
 		return color.RGBA{R: g, G: g, B: g, A: 255}
+	case paletteViridis:
+		if t < 0.5 {
+			u := t * 2.0
+			return color.RGBA{
+				R: clamp01(0.267004 + (0.127568-0.267004)*u),
+				G: clamp01(0.004874 + (0.566949-0.004874)*u),
+				B: clamp01(0.329415 + (0.550556-0.329415)*u),
+				A: 255,
+			}
+		}
+		u := (t - 0.5) * 2.0
+		return color.RGBA{
+			R: clamp01(0.127568 + (0.993248-0.127568)*u),
+			G: clamp01(0.566949 + (0.906157-0.566949)*u),
+			B: clamp01(0.550556 + (0.143936-0.550556)*u),
+			A: 255,
+		}
 	default:
 		return color.RGBA{
 			R: clamp01(0.04 + 0.90*t + 0.15*spark),
