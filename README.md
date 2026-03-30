@@ -9,7 +9,7 @@
 	<img src="images/gbrain.png" alt="gbrain preview" width="360" />
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field
 </p>
 
 Small graphical terminal toys written in Go:
@@ -20,6 +20,7 @@ Small graphical terminal toys written in Go:
 - `glorenz`: animated chaotic strange attractors (Lorenz and Rössler) with a 3D-to-2D terminal projection
 - `gmagnetic`: animated charged particles flowing through a synthetic magnetic dipole field
 - `gbrain`: animated ray-marched NIfTI brain volume rendering using opacity compositing
+- `geinstein`: animated Einstein aperiodic monotile visualization
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
@@ -38,6 +39,7 @@ All are toy applications intended for **compatible terminals** that support the 
 - [`glorenz/`](glorenz/)
 - [`gmagnetic/`](gmagnetic/)
 - [`gbrain/`](gbrain/)
+- [`geinstein/`](geinstein/)
 
 ## Build
 
@@ -53,6 +55,7 @@ Build each app from its directory:
 - `cd glorenz && make build`
 - `cd gmagnetic && make build`
 - `cd gbrain && make build`
+- `cd geinstein && make build`
 
 Or from repo root:
 
@@ -62,6 +65,7 @@ Or from repo root:
 - `make -C glorenz build`
 - `make -C gmagnetic build`
 - `make -C gbrain build`
+- `make -C geinstein build`
 
 ## Install
 
@@ -84,6 +88,7 @@ Default install (to `$HOME/bin`):
 - `make -C glorenz install`
 - `make -C gmagnetic install`
 - `make -C gbrain install`
+- `make -C geinstein install`
 
 Custom prefix:
 
@@ -93,6 +98,7 @@ Custom prefix:
 - `make -C glorenz install PREFIX=/usr/local`
 - `make -C gmagnetic install PREFIX=/usr/local`
 - `make -C gbrain install PREFIX=/usr/local`
+- `make -C geinstein install PREFIX=/usr/local`
 
 Package staging example:
 
@@ -102,6 +108,7 @@ Package staging example:
 - `make -C glorenz install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C gmagnetic install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C gbrain install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
+- `make -C geinstein install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 ## Run
 
@@ -242,6 +249,29 @@ Useful flags:
 - `-substeps` integration updates per simulation step
 - `-dt` integration step size
 - `-frame-stride` render every N simulation steps
+
+### geinstein
+
+`geinstein` renders a stylized Einstein monotile (“hat”) field with a deterministic non-periodic arrangement. Tiles are added with an iterative fill process over time.
+
+From repo root:
+
+- `make -C geinstein run`
+
+Direct binary example:
+
+- `./geinstein/geinstein -palette=twilight -tile-size=48 -spm=360`
+
+Useful flags:
+
+- `-spm` animation steps per minute
+- `-tile-size` approximate monotile size in pixels
+- `-outline` tile outline width
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
+- `-engine` computation engine (`auto`, `cpu`, `gpu`)
+- `-fill-rate` maximum new tiles added per simulation step
+- `-randomize-sec` regenerate with a new random pattern every N seconds (`0` disables)
+- `-frame-stride` render every N animation steps
 
 ## Notes
 
