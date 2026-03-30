@@ -1,13 +1,13 @@
 # Tiled Toys
 
 <p align="center">
-	<img src="images/gbonsai.png" alt="gbonsai preview" width="360" />
-	<img src="images/glife.png" alt="glife preview" width="360" />
-	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="360" />
-	<img src="images/glorenz.png" alt="glorenz preview" width="360" />
-	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="360" />
-	<img src="images/gbrain.png" alt="gbrain preview" width="360" />
-	<img src="images/geinstein.png" alt="geinstein preview" width="360" />
+	<img src="images/gbonsai.png" alt="gbonsai preview" width="300" />
+	<img src="images/glife.png" alt="glife preview" width="300" />
+	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="300" />
+	<img src="images/glorenz.png" alt="glorenz preview" width="300" />
+	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="300" />
+	<img src="images/gbrain.png" alt="gbrain preview" width="300" />
+	<img src="images/geinstein.png" alt="geinstein preview" width="300" />
 </p>
 <p align="center">
 	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field
