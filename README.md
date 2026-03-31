@@ -10,6 +10,7 @@
 	<img src="images/geinstein.png" alt="geinstein preview" width="250" />
 	<img src="images/greactiondiffusion.png" alt="greactiondiffusion preview" width="250" />
 	<img src="images/gmold.png" alt="gmold preview" width="250"/>
+	<img src="images/gmarbles.png" alt="gmarbles preview" width="250"/>
 </p>
 <p align="center">
 	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmarbles</em> — ray-traced glass spheres on a checkerboard plane
