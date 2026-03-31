@@ -1,4 +1,4 @@
-TOYS := gbonsai glife gmandelbrot glorenz gmagnetic gbrain geinstein greactiondiffusion gmold
+TOYS := gbonsai glife gmandelbrot glorenz gmagnetic gbrain geinstein greactiondiffusion gmold gmarbles
 
 PREFIX ?= $(HOME)
 BINDIR ?= $(PREFIX)/bin

@@ -12,7 +12,7 @@
 	<img src="images/gmold.png" alt="gmold preview" width="250"/>
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmarbles</em> — ray-traced glass spheres on a checkerboard plane
 </p>
 
 Small graphical terminal toys written in Go:
@@ -26,6 +26,7 @@ Small graphical terminal toys written in Go:
 - `geinstein`: animated Einstein aperiodic monotile visualization
 - `greactiondiffusion`: animated Gray-Scott reaction-diffusion patterns
 - `gmold`: animated slime mold (Physarum) particle-trail simulation
+- `gmarbles`: ray-traced glass spheres on a chess-squared plane, re-rendered along a path from a new viewpoint
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
@@ -47,6 +48,7 @@ All are toy applications intended for **compatible terminals** that support the 
 - [`geinstein/`](geinstein/)
 - [`greactiondiffusion/`](greactiondiffusion/)
 - [`gmold/`](gmold/)
+- [`gmarbles/`](gmarbles/)
 
 ## Build
 
@@ -65,6 +67,7 @@ Build each app from its directory:
 - `cd geinstein && make build`
 - `cd greactiondiffusion && make build`
 - `cd gmold && make build`
+- `cd gmarbles && make build`
 
 Or from repo root:
 
@@ -77,6 +80,7 @@ Or from repo root:
 - `make -C geinstein build`
 - `make -C greactiondiffusion build`
 - `make -C gmold build`
+- `make -C gmarbles build`
 
 ## Install
 
@@ -102,6 +106,7 @@ Default install (to `$HOME/bin`):
 - `make -C geinstein install`
 - `make -C greactiondiffusion install`
 - `make -C gmold install`
+- `make -C gmarbles install`
 
 Custom prefix:
 
@@ -114,6 +119,7 @@ Custom prefix:
 - `make -C geinstein install PREFIX=/usr/local`
 - `make -C greactiondiffusion install PREFIX=/usr/local`
 - `make -C gmold install PREFIX=/usr/local`
+- `make -C gmarbles install PREFIX=/usr/local`
 
 Package staging example:
 
@@ -126,6 +132,7 @@ Package staging example:
 - `make -C geinstein install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C greactiondiffusion install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C gmold install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
+- `make -C gmarbles install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 ## Run
 
@@ -351,6 +358,32 @@ Useful flags:
 - `-engine` computation engine (`auto`, `cpu`, `gpu`)
 - `-spm` simulation steps per minute
 - `-frame-stride` render every N simulation steps
+
+### gmarbles
+
+`gmarbles` ray traces up to 50 spheres resting on an infinite checkerboard floor. The camera is placed at the scene center, while sphere positions/heights are randomized around the camera at varied distances, with non-overlapping placement and a wider size range (including larger spheres). Sphere materials are randomly assigned between mirrored, opaque (from the selected palette), and translucent. Each sphere also gets random specularity and translucency coefficients in the `[0,1]` range. The key light is chosen per frame from a GMT clock model: sun during GMT daytime and moon during GMT nighttime. A configurable distance-based fog effect is applied so farther geometry blends progressively into the sky. On GPU (`-engine=auto|gpu`), rendering uses multi-bounce path tracing with configurable samples-per-pixel and bounce count.
+
+From repo root:
+
+- `make -C gmarbles run`
+
+Direct binary example:
+
+- `./gmarbles/gmarbles -engine=auto -palette=twilight -spheres=50 -spm=180 -rotation-speed=0.24 -camera-tilt-deg=8 -zoom=1.0 -fov-deg=58 -fog-density=0.01 -spp=4 -bounces=6`
+
+Useful flags:
+
+- `-engine` render engine (`auto`, `cpu`, `gpu`)
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
+- `-spheres` number of glass spheres (`1..50`)
+- `-spm` frames per minute
+- `-rotation-speed` camera 360 rotation speed from the scene center (radians/second)
+- `-camera-tilt-deg` upward camera tilt offset in degrees
+- `-zoom` camera zoom factor (`>0`, larger = closer)
+- `-fov-deg` camera field of view in degrees (lower reduces nearby distortion)
+- `-fog-density` distance fog density (`0` disables fog)
+- `-spp` GPU path tracing samples per pixel
+- `-bounces` GPU path tracing maximum bounces
 
 ## Notes
 
