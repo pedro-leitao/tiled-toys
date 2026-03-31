@@ -7,7 +7,7 @@
 	<img src="images/glorenz.png" alt="glorenz preview" width="250" />
 	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="250" />
 	<img src="images/gbrain.png" alt="gbrain preview" width="250" />
-	<img src="images/geinstein.png" alt="geinstein preview" width="300" />
+	<img src="images/geinstein.png" alt="geinstein preview" width="250" />
 	<img src="images/greactiondiffusion.png" alt="greactiondiffusion preview" width="250" />
 </p>
 <p align="center">
