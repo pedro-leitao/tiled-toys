@@ -1,16 +1,17 @@
 # Tiled Toys
 
 <p align="center">
-	<img src="images/gbonsai.png" alt="gbonsai preview" width="300" />
-	<img src="images/glife.png" alt="glife preview" width="300" />
-	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="300" />
-	<img src="images/glorenz.png" alt="glorenz preview" width="300" />
-	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="300" />
-	<img src="images/gbrain.png" alt="gbrain preview" width="300" />
+	<img src="images/gbonsai.png" alt="gbonsai preview" width="250" />
+	<img src="images/glife.png" alt="glife preview" width="250" />
+	<img src="images/gmandelbrot.png" alt="gmandelbrot preview" width="250" />
+	<img src="images/glorenz.png" alt="glorenz preview" width="250" />
+	<img src="images/gmagnetic.png" alt="gmagnetic preview" width="250" />
+	<img src="images/gbrain.png" alt="gbrain preview" width="250" />
 	<img src="images/geinstein.png" alt="geinstein preview" width="300" />
+	<img src="images/greactiondiffusion.png" alt="greactiondiffusion preview" width="250" />
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns
 </p>
 
 Small graphical terminal toys written in Go:
@@ -22,6 +23,7 @@ Small graphical terminal toys written in Go:
 - `gmagnetic`: animated charged particles flowing through a synthetic magnetic dipole field
 - `gbrain`: animated ray-marched NIfTI brain volume rendering using opacity compositing
 - `geinstein`: animated Einstein aperiodic monotile visualization
+- `greactiondiffusion`: animated Gray-Scott reaction-diffusion patterns
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
@@ -41,6 +43,7 @@ All are toy applications intended for **compatible terminals** that support the 
 - [`gmagnetic/`](gmagnetic/)
 - [`gbrain/`](gbrain/)
 - [`geinstein/`](geinstein/)
+- [`greactiondiffusion/`](greactiondiffusion/)
 
 ## Build
 
@@ -67,6 +70,8 @@ Or from repo root:
 - `make -C gmagnetic build`
 - `make -C gbrain build`
 - `make -C geinstein build`
+- `make -C greactiondiffusion build`
+- `make -C greactiondiffusion build`
 
 ## Install
 
@@ -90,6 +95,7 @@ Default install (to `$HOME/bin`):
 - `make -C gmagnetic install`
 - `make -C gbrain install`
 - `make -C geinstein install`
+- `make -C greactiondiffusion install`
 
 Custom prefix:
 
@@ -100,6 +106,7 @@ Custom prefix:
 - `make -C gmagnetic install PREFIX=/usr/local`
 - `make -C gbrain install PREFIX=/usr/local`
 - `make -C geinstein install PREFIX=/usr/local`
+- `make -C greactiondiffusion install PREFIX=/usr/local`
 
 Package staging example:
 
@@ -110,6 +117,7 @@ Package staging example:
 - `make -C gmagnetic install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C gbrain install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C geinstein install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
+- `make -C greactiondiffusion install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 ## Run
 
@@ -273,6 +281,35 @@ Useful flags:
 - `-fill-rate` maximum new tiles added per simulation step
 - `-randomize-sec` regenerate with a new random pattern every N seconds (`0` disables)
 - `-frame-stride` render every N animation steps
+
+### greactiondiffusion
+
+`greactiondiffusion` simulates Gray-Scott reaction-diffusion patterns, producing organic spot and stripe structures.
+
+From repo root:
+
+- `make -C greactiondiffusion run`
+
+Direct binary example:
+
+- `./greactiondiffusion/greactiondiffusion -preset=coral -palette=twilight -spm=720`
+
+Useful flags:
+
+- `-preset` pattern preset (`coral`, `mitosis`, `maze`, `spots`, `zebra`, `fingerprint`, `solitons`)
+- `-feed` feed rate (overrides preset)
+- `-kill` kill rate (overrides preset)
+- `-du` diffusion rate for chemical U (overrides preset)
+- `-dv` diffusion rate for chemical V (overrides preset)
+- `-dt` integration step size
+- `-cell-size` simulation cell size in pixels
+- `-substeps` simulation updates per tick
+- `-inject-every` steps between seed injections (`0` disables)
+- `-inject-count` number of seed drops per injection
+- `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
+- `-engine` simulation engine (`auto`, `cpu`, `gpu`)
+- `-spm` simulation steps per minute
+- `-frame-stride` render every N simulation steps
 
 ## Notes
 
