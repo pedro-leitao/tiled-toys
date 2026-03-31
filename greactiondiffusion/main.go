@@ -72,11 +72,15 @@ type rdField struct {
 	seedCount      int
 	seedEdgeJitter float64
 	resetMinSteps  int
+	resetMaxSteps  int
 	resetCooldown  int
 	resetThreshold float64
 	resetFraction  float64
 	resetStride    int
 	lastResetStep  int
+	resetHitCount  int
+	resetHitNeeded int
+	stepsSinceReset int
 
 	gpu *gpuRD
 }
@@ -122,6 +126,8 @@ func main() {
 	injectCount := flag.Int("inject-count", 3, "Number of random seed drops per injection")
 	paletteName := flag.String("palette", "twilight", "Color palette: twilight|fire|ice|forest|mono|viridis")
 	engineName := flag.String("engine", "auto", "Simulation engine: auto|cpu|gpu")
+	resetMinSteps := flag.Int("reset-min-steps", 10, "Minimum simulation steps before auto-reset can trigger")
+	resetMaxSteps := flag.Int("reset-max-steps", 180000, "Force auto-reset after this many simulation steps (0 disables)")
 	frameStride := flag.Int("frame-stride", 1, "Render one frame every N simulation steps")
 	flag.Parse()
 
@@ -145,6 +151,12 @@ func main() {
 	}
 	if *frameStride < 1 {
 		*frameStride = 1
+	}
+	if *resetMinSteps < 0 {
+		*resetMinSteps = 0
+	}
+	if *resetMaxSteps < 0 {
+		*resetMaxSteps = 0
 	}
 
 	params := presetParams(*presetName)
@@ -171,11 +183,13 @@ func main() {
 		injectEvery: *injectEvery,
 		injectCount: *injectCount,
 		rnd:         rnd,
-		resetMinSteps:  420,
+		resetMinSteps:  *resetMinSteps,
+		resetMaxSteps:  *resetMaxSteps,
 		resetCooldown:  300,
-		resetThreshold: 0.6,
-		resetFraction:  0.78,
-		resetStride:    2,
+		resetThreshold: 0.3,
+		resetFraction:  0.82,
+		resetStride:    3,
+		resetHitNeeded: 3,
 	}
 
 	palette := parsePalette(*paletteName)
@@ -237,9 +251,11 @@ func main() {
 				fmt.Fprintf(os.Stderr, "GPU readback failed: %v\n", err)
 			}
 		}
-			if field.shouldReset() {
-				field.Reset()
-			}
+		viewW := min(field.width, wpx/(*cellSize))
+		viewH := min(field.height, hpx/(*cellSize))
+		if field.shouldReset(viewW, viewH) {
+			field.Reset()
+		}
 		drawField(img, field, palette, *cellSize)
 
 		fmt.Print("\033[H")
@@ -938,6 +954,8 @@ func (f *rdField) Reset() {
 		f.v[i] = 0.0
 	}
 	f.step = 0
+	f.stepsSinceReset = 0
+	f.resetHitCount = 0
 	for i := 0; i < f.seedCount; i++ {
 		f.injectSeed()
 	}
@@ -958,6 +976,7 @@ func (f *rdField) Step() {
 			f.gpu = nil
 		} else {
 			f.step++
+			f.stepsSinceReset++
 			if f.injectEvery > 0 && f.step%f.injectEvery == 0 {
 				if err := f.gpu.InjectSeeds(f); err != nil {
 					fmt.Fprintf(os.Stderr, "GPU seed inject failed: %v\n", err)
@@ -985,9 +1004,6 @@ func (f *rdField) Step() {
 				xm1 = w - 1
 			}
 			xp1 := x + 1
-							if err := f.gpu.InjectSeeds(f); err != nil {
-								fmt.Fprintf(os.Stderr, "GPU seed inject failed: %v\n", err)
-							}
 
 			idx := y*w + x
 			u := f.u[idx]
@@ -1014,6 +1030,7 @@ func (f *rdField) Step() {
 	f.u, f.uNext = f.uNext, f.u
 	f.v, f.vNext = f.vNext, f.v
 	f.step++
+	f.stepsSinceReset++
 
 	if f.injectEvery > 0 && f.step%f.injectEvery == 0 {
 		for i := 0; i < f.injectCount; i++ {
@@ -1048,15 +1065,27 @@ func (f *rdField) injectSeed() {
 	}
 }
 
-func (f *rdField) shouldReset() bool {
+func (f *rdField) shouldReset(viewW, viewH int) bool {
 	if f.width == 0 || f.height == 0 {
 		return false
 	}
-	if f.step < f.resetMinSteps {
+	if viewW <= 0 || viewH <= 0 {
 		return false
 	}
-	if f.lastResetStep > 0 && (f.step-f.lastResetStep) < f.resetCooldown {
+	if viewW > f.width {
+		viewW = f.width
+	}
+	if viewH > f.height {
+		viewH = f.height
+	}
+	if f.stepsSinceReset < f.resetMinSteps {
 		return false
+	}
+	if f.resetCooldown > 0 && f.stepsSinceReset < f.resetCooldown {
+		return false
+	}
+	if f.resetMaxSteps > 0 && f.stepsSinceReset >= f.resetMaxSteps {
+		return true
 	}
 	stride := f.resetStride
 	if stride < 1 {
@@ -1064,20 +1093,48 @@ func (f *rdField) shouldReset() bool {
 	}
 	count := 0
 	full := 0
-	for y := 0; y < f.height; y += stride {
+	mean := 0.0
+	mean2 := 0.0
+	for y := 0; y < viewH; y += stride {
 		row := y * f.width
-		for x := 0; x < f.width; x += stride {
+		for x := 0; x < viewW; x += stride {
 			v := f.v[row+x]
-			if v >= f.resetThreshold {
+			u := f.u[row+x]
+			mix := 0.72*v + 0.28*(1.0-u)
+			mix *= 1.25
+			t := clamp01(math.Pow(mix, 0.6))
+			if t >= f.resetThreshold {
 				full++
 			}
+			mean += v
+			mean2 += v * v
 			count++
 		}
 	}
 	if count == 0 {
 		return false
 	}
+	mean /= float64(count)
+	mean2 /= float64(count)
+	variance := mean2 - mean*mean
+
+	trigger := false
 	if float64(full)/float64(count) >= f.resetFraction {
+		trigger = true
+	}
+	if mean > 0.18 && variance < 0.0011 {
+		trigger = true
+	}
+	if trigger {
+		f.resetHitCount++
+	} else if f.resetHitCount > 0 {
+		f.resetHitCount--
+	}
+	if f.resetHitNeeded < 1 {
+		f.resetHitNeeded = 1
+	}
+	if f.resetHitCount >= f.resetHitNeeded {
+		f.resetHitCount = 0
 		f.lastResetStep = f.step
 		return true
 	}

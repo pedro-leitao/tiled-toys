@@ -9,9 +9,10 @@
 	<img src="images/gbrain.png" alt="gbrain preview" width="250" />
 	<img src="images/geinstein.png" alt="geinstein preview" width="250" />
 	<img src="images/greactiondiffusion.png" alt="greactiondiffusion preview" width="250" />
+	<img src="images/gmold.png" alt="gmold preview" width="250"/>
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation
 </p>
 
 Small graphical terminal toys written in Go:
@@ -24,6 +25,7 @@ Small graphical terminal toys written in Go:
 - `gbrain`: animated ray-marched NIfTI brain volume rendering using opacity compositing
 - `geinstein`: animated Einstein aperiodic monotile visualization
 - `greactiondiffusion`: animated Gray-Scott reaction-diffusion patterns
+- `gmold`: animated slime mold (Physarum) particle-trail simulation
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as ambient visuals in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU consumption is generally very low, making them suitable for background visuals.
 
@@ -44,6 +46,7 @@ All are toy applications intended for **compatible terminals** that support the 
 - [`gbrain/`](gbrain/)
 - [`geinstein/`](geinstein/)
 - [`greactiondiffusion/`](greactiondiffusion/)
+- [`gmold/`](gmold/)
 
 ## Build
 
@@ -60,6 +63,8 @@ Build each app from its directory:
 - `cd gmagnetic && make build`
 - `cd gbrain && make build`
 - `cd geinstein && make build`
+- `cd greactiondiffusion && make build`
+- `cd gmold && make build`
 
 Or from repo root:
 
@@ -71,7 +76,7 @@ Or from repo root:
 - `make -C gbrain build`
 - `make -C geinstein build`
 - `make -C greactiondiffusion build`
-- `make -C greactiondiffusion build`
+- `make -C gmold build`
 
 ## Install
 
@@ -96,6 +101,7 @@ Default install (to `$HOME/bin`):
 - `make -C gbrain install`
 - `make -C geinstein install`
 - `make -C greactiondiffusion install`
+- `make -C gmold install`
 
 Custom prefix:
 
@@ -107,6 +113,7 @@ Custom prefix:
 - `make -C gbrain install PREFIX=/usr/local`
 - `make -C geinstein install PREFIX=/usr/local`
 - `make -C greactiondiffusion install PREFIX=/usr/local`
+- `make -C gmold install PREFIX=/usr/local`
 
 Package staging example:
 
@@ -118,6 +125,7 @@ Package staging example:
 - `make -C gbrain install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C geinstein install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 - `make -C greactiondiffusion install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
+- `make -C gmold install DESTDIR=/tmp/pkgroot PREFIX=/usr/local`
 
 ## Run
 
@@ -308,6 +316,39 @@ Useful flags:
 - `-inject-count` number of seed drops per injection
 - `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
 - `-engine` simulation engine (`auto`, `cpu`, `gpu`)
+- `-reset-min-steps` minimum steps before auto-reset can trigger
+- `-reset-max-steps` force auto-reset after this many steps (`0` disables)
+- `-spm` simulation steps per minute
+- `-frame-stride` render every N simulation steps
+
+### gmold
+
+`gmold` simulates Physarum-like slime mold behavior using thousands of agents that deposit and follow pheromone trails on a tiled grid. It supports optional GoGPU acceleration for trail diffusion (`-engine=auto|cpu|gpu`).
+
+From repo root:
+
+- `make -C gmold run`
+
+Direct binary example:
+
+- `./gmold/gmold -agents=12000 -palette=plasma -spm=900`
+
+Useful flags:
+
+- `-agents` number of slime mold particles
+- `-cell-size` simulation cell size in pixels
+- `-substeps` simulation updates per tick
+- `-sensor-distance` forward sensor distance in cells
+- `-sensor-angle` left/right sensor angle in degrees
+- `-turn-angle` steering angle in degrees
+- `-move-speed` agent movement speed in cells per step
+- `-deposit` trail deposit amount per step
+- `-diffusion` trail diffusion strength
+- `-decay` trail decay strength
+- `-jitter` random steering jitter in degrees
+- `-persistence` directional persistence (`0..0.99`, higher = smoother veins)
+- `-palette` color palette (`plasma`, `forest`, `aurora`, `mono`, `viridis`)
+- `-engine` computation engine (`auto`, `cpu`, `gpu`)
 - `-spm` simulation steps per minute
 - `-frame-stride` render every N simulation steps
 
