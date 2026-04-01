@@ -1,4 +1,4 @@
-module gteapot
+module gmarbles
 
 go 1.26.1
 

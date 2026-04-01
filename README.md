@@ -13,7 +13,7 @@
 	<img src="images/gmarbles.png" alt="gmarbles preview" width="250"/>
 </p>
 <p align="center">
-	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmarbles</em> — ray-traced glass spheres on a checkerboard plane
+	<em>gbonsai</em> — animated bonsai tree growth &nbsp;&nbsp;•&nbsp;&nbsp; <em>glife</em> — animated Conway's Game of Life &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmandelbrot</em> — animated Mandelbrot exploration &nbsp;&nbsp;•&nbsp;&nbsp; <em>glorenz</em> — animated strange attractors (Lorenz/Rössler) &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmagnetic</em> — animated magnetic field particle simulator &nbsp;&nbsp;•&nbsp;&nbsp; <em>gbrain</em> — animated NIfTI brain volume renderer &nbsp;&nbsp;•&nbsp;&nbsp; <em>geinstein</em> — animated Einstein monotile field &nbsp;&nbsp;•&nbsp;&nbsp; <em>greactiondiffusion</em> — animated Gray-Scott reaction-diffusion patterns &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmold</em> — animated slime mold (Physarum) simulation &nbsp;&nbsp;•&nbsp;&nbsp; <em>gmarbles</em> — ray-traced marbles and solids with dynamic lighting
 </p>
 
 Small graphical terminal toys written in Go:
@@ -27,7 +27,7 @@ Small graphical terminal toys written in Go:
 - `geinstein`: animated Einstein aperiodic monotile visualization
 - `greactiondiffusion`: animated Gray-Scott reaction-diffusion patterns
 - `gmold`: animated slime mold (Physarum) particle-trail simulation
-- `gmarbles`: ray-traced glass spheres on a chess-squared plane, re-rendered along a path from a new viewpoint
+- `gmarbles`: ray-traced marbles, cubes, and pyramids on a reflective checkerboard floor with dynamic day/night lighting
 
 All are toy applications intended for **compatible terminals** that support the Kitty graphics protocol (or equivalent image escape support), such as [Ghostty](https://ghostty.org) or [Kitty](https://sw.kovidgoyal.net/kitty/). They work well as decorations, or space fillers in **tiled window manager** layouts (e.g., [i3](https://i3wm.org/), [Hyprland](https://hyprland.org/), [Sway](https://swaywm.org/), [Awesome](https://awesomewm.org/), or [AeroSpace](https://github.com/nikitabobko/AeroSpace)). CPU/GPU consumption is generally very low, making them suitable for even small notebooks.
 
@@ -362,7 +362,7 @@ Useful flags:
 
 ### gmarbles
 
-`gmarbles` ray traces up to 50 spheres resting on an infinite checkerboard floor. The camera is placed at the scene center, while sphere positions/heights are randomized around the camera at varied distances, with non-overlapping placement and a wider size range (including larger spheres). Sphere materials are randomly assigned between mirrored, opaque (from the selected palette), and translucent. Each sphere also gets random specularity and translucency coefficients in the `[0,1]` range. The key light is chosen per frame from a GMT clock model: sun during GMT daytime and moon during GMT nighttime. A configurable distance-based fog effect is applied so farther geometry blends progressively into the sky. On GPU (`-engine=auto|gpu`), rendering uses multi-bounce path tracing with configurable samples-per-pixel and bounce count.
+`gmarbles` ray traces up to 50 non-overlapping objects (spheres, cubes, and pyramids) over a checkerboard floor. Materials are varied per object (mirror, opaque from the selected palette, or translucent), with randomized specularity/translucency coefficients in the `[0,1]` range. The lighting follows GMT time (sun in daytime, moon at night), with optional emissive lighting by turning the smallest sphere into a light source. It also supports configurable fog, floor reflectivity, and optional randomized “interesting” camera shots. On GPU (`-engine=auto|gpu`), rendering uses multi-bounce path tracing with configurable samples-per-pixel and bounce count.
 
 From repo root:
 
@@ -370,19 +370,22 @@ From repo root:
 
 Direct binary example:
 
-- `./gmarbles/gmarbles -engine=auto -palette=twilight -spheres=50 -spm=180 -rotation-speed=0.24 -camera-tilt-deg=8 -zoom=1.0 -fov-deg=58 -fog-density=0.01 -spp=4 -bounces=6`
+- `./gmarbles/gmarbles -engine=auto -palette=twilight -spheres=50 -spm=180 -rotation-speed=0.24 -camera-tilt-deg=8 -zoom=1.0 -fov-deg=58 -fog-density=0.01 -interesting-view -floor-reflectivity=0.08 -light-sphere-brightness=2.4 -spp=4 -bounces=6`
 
 Useful flags:
 
 - `-engine` render engine (`auto`, `cpu`, `gpu`)
 - `-palette` color palette (`twilight`, `fire`, `ice`, `forest`, `mono`, `viridis`)
-- `-spheres` number of glass spheres (`1..50`)
+- `-spheres` number of scene objects (`1..50`)
 - `-spm` frames per minute
-- `-rotation-speed` camera 360 rotation speed from the scene center (radians/second)
+- `-rotation-speed` camera orbit speed (radians/second)
 - `-camera-tilt-deg` upward camera tilt offset in degrees
 - `-zoom` camera zoom factor (`>0`, larger = closer)
 - `-fov-deg` camera field of view in degrees (lower reduces nearby distortion)
 - `-fog-density` distance fog density (`0` disables fog)
+- `-interesting-view` enable randomized cinematic camera viewpoints
+- `-floor-reflectivity` checkerboard floor reflectivity (`0..1`)
+- `-light-sphere-brightness` smallest-sphere emissive brightness (`0` disables)
 - `-spp` GPU path tracing samples per pixel
 - `-bounces` GPU path tracing maximum bounces
 

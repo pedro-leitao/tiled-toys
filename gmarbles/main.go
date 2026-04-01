@@ -26,11 +26,15 @@ type paletteType int
 
 const (
 	maxSpheres    = 50
-	gpuParamsSize = 96 + maxSpheres*16*3 + 16
+	gpuParamsSize = 96 + maxSpheres*16*7 + 16
 	spheresOffset = 96
 	propsOffset   = spheresOffset + maxSpheres*16
 	coeffOffset   = propsOffset + maxSpheres*16
-	extraOffset   = coeffOffset + maxSpheres*16
+	shapeOffset   = coeffOffset + maxSpheres*16
+	basisXOffset  = shapeOffset + maxSpheres*16
+	basisYOffset  = basisXOffset + maxSpheres*16
+	basisZOffset  = basisYOffset + maxSpheres*16
+	extraOffset   = basisZOffset + maxSpheres*16
 )
 
 const (
@@ -53,10 +57,16 @@ type vec3 struct{ x, y, z float64 }
 type sphere struct {
 	c            vec3
 	r            float64
+	kind         int
+	half         vec3
+	ux           vec3
+	uy           vec3
+	uz           vec3
 	mat          int
 	albedo       vec3
 	specularity  float64
 	translucency float64
+	emission     float64
 }
 
 type ray struct {
@@ -80,13 +90,23 @@ const (
 	matTranslucent
 )
 
+const (
+	shapeSphere = iota
+	shapeCube
+	shapePyramid
+)
+
 type scene struct {
 	spheres              []sphere
+	hasNonSpherical      bool
+	lightSphereI         int
+	lightSphereBrightness float64
 	light                vec3
 	skyLuminance         float64
 	ambientStrength      float64
 	exposure             float64
 	fogDensity           float64
+	floorReflectivity    float64
 	pathSamples          int
 	pathBounces          int
 	frameSeed            float64
@@ -123,9 +143,12 @@ func main() {
 	zoom := flag.Float64("zoom", 1.0, "Camera zoom factor (>0, larger = closer)")
 	fovDeg := flag.Float64("fov-deg", 58.0, "Camera field of view in degrees (lower reduces perspective distortion)")
 	fogDensity := flag.Float64("fog-density", 0.010, "Distance fog density (0 disables fog)")
+	interestingView := flag.Bool("interesting-view", false, "Use random interesting camera viewpoints")
+	floorReflectivity := flag.Float64("floor-reflectivity", 0.08, "Floor reflectivity (0..1)")
+	lightSphereBrightness := flag.Float64("light-sphere-brightness", 2.4, "Smallest sphere light brightness (0 disables)")
 	spp := flag.Int("spp", 4, "GPU path tracing samples per pixel")
 	bounces := flag.Int("bounces", 6, "GPU path tracing max bounces")
-	spheresN := flag.Int("spheres", 5, "Number of glass spheres (1..50)")
+	spheresN := flag.Int("spheres", 5, "Number of objects (1..50)")
 	flag.Parse()
 
 	if *spm < 1 {
@@ -142,6 +165,18 @@ func main() {
 	}
 	if *fogDensity < 0 {
 		*fogDensity = 0
+	}
+	if *floorReflectivity < 0 {
+		*floorReflectivity = 0
+	}
+	if *floorReflectivity > 1 {
+		*floorReflectivity = 1
+	}
+	if *lightSphereBrightness < 0 {
+		*lightSphereBrightness = 0
+	}
+	if *lightSphereBrightness > 40 {
+		*lightSphereBrightness = 40
 	}
 	if *spp < 1 {
 		*spp = 1
@@ -206,6 +241,8 @@ func main() {
 	seed := float64(time.Now().UnixNano()) * 1e-9
 	scn := makeScene(*spheresN, seed, palette)
 	scn.fogDensity = *fogDensity
+	scn.floorReflectivity = *floorReflectivity
+	configureLightSphere(&scn, *lightSphereBrightness)
 	scn.pathSamples = *spp
 	scn.pathBounces = *bounces
 	frame := int64(0)
@@ -219,6 +256,9 @@ func main() {
 		scn.frameSeed = float64(time.Now().UnixNano()) * 1e-9
 
 		camPos, camTarget := viewpoint(frame, *rotationSpeed, *spm, *spheresN, *cameraTiltDeg, *zoom)
+		if *interestingView {
+			camPos, camTarget = interestingViewpoint(frame, *spm, scn, seed)
+		}
 		var img *image.RGBA
 		if gpu != nil {
 			out, err := gpu.Render(w, h, camPos, camTarget, *fovDeg, scn)
@@ -250,10 +290,12 @@ func makeScene(sphereCount int, seed float64, palette paletteType) scene {
 		sphereCount = maxSpheres
 	}
 	base := make([]sphere, 0, sphereCount)
+	hasNonSpherical := false
+	minGap := 0.03
 	centerX := 0.0
 	centerZ := 0.0
-	radiusMin := 2.4
-	radiusMax := 8.2 + 0.30*float64(sphereCount)
+	radiusMin := 1.5
+	radiusMax := 5.8 + 0.20*float64(sphereCount)
 	if radiusMax < radiusMin+0.5 {
 		radiusMax = radiusMin + 0.5
 	}
@@ -264,21 +306,60 @@ func makeScene(sphereCount int, seed float64, palette paletteType) scene {
 			angle := 2*math.Pi*clamp(0.5+0.5*signedNoise(seed+0.29, float64(i)*1.11+float64(attempt)*1.71, 1.0), 0, 1)
 
 			sizeNoise := clamp(0.5+0.5*signedNoise(seed+5.77, float64(i)*3.31+float64(attempt)*0.61, 1.0), 0, 1)
-			r := mix(0.24, 1.45, math.Pow(sizeNoise, 0.48))
+			kindNoise := clamp(0.5+0.5*signedNoise(seed+21.37, float64(i)*2.17+float64(attempt)*0.43, 1.0), 0, 1)
+			if i == 0 {
+				kindNoise = 0
+			}
+			kind := shapeSphere
+			half := vec3{}
+			euler := vec3{}
+			r := 0.0
+			switch {
+			case kindNoise < 0.34:
+				kind = shapeSphere
+				r = mix(0.24, 1.35, math.Pow(sizeNoise, 0.48))
+			case kindNoise < 0.72:
+				kind = shapeCube
+				h := mix(0.22, 0.84, math.Pow(sizeNoise, 0.65))
+				half = vec3{h, h, h}
+				euler = vec3{
+					signedNoise(seed+30.1, float64(i)*3.17+float64(attempt)*1.03, 0.85),
+					signedNoise(seed+30.9, float64(i)*2.13+float64(attempt)*0.67, math.Pi),
+					signedNoise(seed+31.7, float64(i)*4.19+float64(attempt)*0.91, 0.85),
+				}
+				r = math.Sqrt(3.0) * h
+			default:
+				kind = shapePyramid
+				w := mix(0.26, 0.82, math.Pow(sizeNoise, 0.70))
+				h := mix(0.24, 0.95, math.Pow(sizeNoise, 0.58))
+				half = vec3{w, h, w}
+				euler = vec3{
+					signedNoise(seed+32.5, float64(i)*2.87+float64(attempt)*1.19, 0.55),
+					signedNoise(seed+33.3, float64(i)*2.31+float64(attempt)*0.63, math.Pi),
+					signedNoise(seed+34.1, float64(i)*3.63+float64(attempt)*0.77, 0.55),
+				}
+				r = math.Sqrt(2*w*w + h*h)
+			}
+			ux, uy, uz := basisFromEuler(euler)
 
-			orbitR := mix(radiusMin, radiusMax, math.Sqrt(t)) + signedNoise(seed+1.93, float64(i)*1.87+float64(attempt)*0.77, 2.0)
-			orbitR = clamp(orbitR, math.Max(radiusMin, r+1.4), radiusMax)
+			orbitR := mix(radiusMin, radiusMax, math.Sqrt(t)) + signedNoise(seed+1.93, float64(i)*1.87+float64(attempt)*0.77, 1.1)
+			orbitR = clamp(orbitR, math.Max(radiusMin, r+0.55), radiusMax)
 
-			x := centerX + orbitR*math.Cos(angle) + signedNoise(seed+2.31, float64(i)*2.03+float64(attempt), 0.65)
-			z := centerZ + orbitR*math.Sin(angle) + signedNoise(seed+3.17, float64(i)*2.27+float64(attempt), 0.65)
-			y := r + signedNoise(seed+4.73, float64(i)*2.77+float64(attempt), 0.10)
-			if y < r+0.02 {
-				y = r + 0.02
+			x := centerX + orbitR*math.Cos(angle) + signedNoise(seed+2.31, float64(i)*2.03+float64(attempt), 0.35)
+			z := centerZ + orbitR*math.Sin(angle) + signedNoise(seed+3.17, float64(i)*2.27+float64(attempt), 0.35)
+			y := objectSupportHeight(sphere{kind: kind, half: half, ux: ux, uy: uy, uz: uz, r: r}) + signedNoise(seed+4.73, float64(i)*2.77+float64(attempt), 0.10)
+			if y < 0.02 {
+				y = 0.02
 			}
 
 			candidate := sphere{
 				c:            vec3{x, y, z},
 				r:            r,
+				kind:         kind,
+				half:         half,
+				ux:           ux,
+				uy:           uy,
+				uz:           uz,
 				mat:          matTranslucent,
 				albedo:       vec3{0.95, 0.98, 1.0},
 				specularity:  clamp(0.5+0.5*signedNoise(seed+9.3, float64(i)*4.01+float64(attempt), 1.0), 0, 1),
@@ -287,13 +368,13 @@ func makeScene(sphereCount int, seed float64, palette paletteType) scene {
 
 			overlap := false
 			for _, existing := range base {
-				if length(sub(candidate.c, existing.c)) < candidate.r+existing.r+0.09 {
+				if length(sub(candidate.c, existing.c)) < candidate.r+existing.r+minGap {
 					overlap = true
 					break
 				}
 			}
 			camPos := vec3{0.0, 1.0, 0.0}
-			if length(sub(candidate.c, camPos)) < candidate.r+1.1 {
+			if length(sub(candidate.c, camPos)) < candidate.r+0.9 {
 				overlap = true
 			}
 			if !overlap {
@@ -304,32 +385,66 @@ func makeScene(sphereCount int, seed float64, palette paletteType) scene {
 		}
 
 		if !placed {
-			r := 0.48 + 0.52*math.Abs(signedNoise(seed+17.1, float64(i)*1.37, 1.0))
+			sizeNoise := math.Abs(signedNoise(seed+17.1, float64(i)*1.37, 1.0))
+			kindNoise := clamp(0.5+0.5*signedNoise(seed+35.3, float64(i)*2.41, 1.0), 0, 1)
+			if i == 0 {
+				kindNoise = 0
+			}
+			kind := shapeSphere
+			half := vec3{}
+			euler := vec3{}
+			r := 0.48 + 0.52*sizeNoise
+			switch {
+			case kindNoise < 0.34:
+				kind = shapeSphere
+				r = mix(0.30, 1.15, sizeNoise)
+			case kindNoise < 0.72:
+				kind = shapeCube
+				h := mix(0.26, 0.78, sizeNoise)
+				half = vec3{h, h, h}
+				euler = vec3{signedNoise(seed+36.1, float64(i)*2.7, 0.85), signedNoise(seed+36.9, float64(i)*1.7, math.Pi), signedNoise(seed+37.7, float64(i)*2.2, 0.85)}
+				r = math.Sqrt(3.0) * h
+			default:
+				kind = shapePyramid
+				w := mix(0.28, 0.80, sizeNoise)
+				h := mix(0.28, 0.90, sizeNoise)
+				half = vec3{w, h, w}
+				euler = vec3{signedNoise(seed+38.5, float64(i)*2.3, 0.55), signedNoise(seed+39.3, float64(i)*1.1, math.Pi), signedNoise(seed+40.1, float64(i)*1.9, 0.55)}
+				r = math.Sqrt(2*w*w + h*h)
+			}
+			ux, uy, uz := basisFromEuler(euler)
 			a := float64(i) * 2.399963229728653
-			fallbackR := radiusMin + (radiusMax-radiusMin)*float64(i+1)/float64(maxInt(1, sphereCount)) + r + 1.2
+			fallbackR := radiusMin + (radiusMax-radiusMin)*float64(i+1)/float64(maxInt(1, sphereCount)) + r + 0.7
 			for guard := 0; guard < 80; guard++ {
-				c := vec3{centerX + fallbackR*math.Cos(a), r + 0.02, centerZ + fallbackR*math.Sin(a)}
+				obj := sphere{kind: kind, half: half, ux: ux, uy: uy, uz: uz, r: r}
+				y := objectSupportHeight(obj) + 0.02
+				c := vec3{centerX + fallbackR*math.Cos(a), y, centerZ + fallbackR*math.Sin(a)}
 				overlap := false
 				for _, existing := range base {
-					if length(sub(c, existing.c)) < r+existing.r+0.09 {
+					if length(sub(c, existing.c)) < r+existing.r+minGap {
 						overlap = true
 						break
 					}
 				}
-				if !overlap && length(sub(c, vec3{0, 1, 0})) >= r+1.1 {
-					base = append(base, sphere{
-						c:            c,
-						r:            r,
-						mat:          matTranslucent,
-						albedo:       vec3{0.95, 0.98, 1.0},
-						specularity:  clamp(0.5+0.5*signedNoise(seed+9.3, float64(i)*4.01, 1.0), 0, 1),
-						translucency: clamp(0.5+0.5*signedNoise(seed+13.7, float64(i)*4.73, 1.0), 0, 1),
-					})
+				if !overlap && length(sub(c, vec3{0, 1, 0})) >= r+0.9 {
+					obj.c = c
+					obj.mat = matTranslucent
+					obj.albedo = vec3{0.95, 0.98, 1.0}
+					obj.specularity = clamp(0.5+0.5*signedNoise(seed+9.3, float64(i)*4.01, 1.0), 0, 1)
+					obj.translucency = clamp(0.5+0.5*signedNoise(seed+13.7, float64(i)*4.73, 1.0), 0, 1)
+					base = append(base, obj)
 					break
 				}
-				fallbackR += r + 0.7
+				fallbackR += r + 0.35
 				a += 0.73
 			}
+		}
+	}
+
+	for _, s := range base {
+		if s.kind != shapeSphere {
+			hasNonSpherical = true
+			break
 		}
 	}
 
@@ -369,19 +484,51 @@ func makeScene(sphereCount int, seed float64, palette paletteType) scene {
 	margin := 2.4
 	return scene{
 		spheres:         base,
+		hasNonSpherical: hasNonSpherical,
+		lightSphereI:    -1,
+		lightSphereBrightness: 0,
 		light:           norm(vec3{-0.6, 1.0, -0.4}),
 		skyLuminance:    1.0,
 		ambientStrength: 1.0,
 		exposure:        1.0,
 		fogDensity:      0.010,
-		pathSamples: 4,
-		pathBounces: 6,
-		frameSeed:   seed,
-		floorMinX: minX - margin,
-		floorMaxX: maxX + margin,
-		floorMinZ: minZ - margin,
-		floorMaxZ: maxZ + margin,
+		floorReflectivity: 0.08,
+		pathSamples:     4,
+		pathBounces:     6,
+		frameSeed:       seed,
+		floorMinX:       minX - margin,
+		floorMaxX:       maxX + margin,
+		floorMinZ:       minZ - margin,
+		floorMaxZ:       maxZ + margin,
 	}
+}
+
+func configureLightSphere(scn *scene, brightness float64) {
+	scn.lightSphereI = -1
+	scn.lightSphereBrightness = clamp(brightness, 0, 40)
+	for i := range scn.spheres {
+		scn.spheres[i].emission = 0
+	}
+	if scn.lightSphereBrightness <= 0 {
+		return
+	}
+	bestI := -1
+	bestR := 1e30
+	for i, s := range scn.spheres {
+		if s.kind != shapeSphere {
+			continue
+		}
+		if s.r < bestR {
+			bestR = s.r
+			bestI = i
+		}
+	}
+	if bestI < 0 {
+		return
+	}
+	scn.lightSphereI = bestI
+	scn.spheres[bestI].emission = scn.lightSphereBrightness
+	scn.spheres[bestI].albedo = mix3(scn.spheres[bestI].albedo, vec3{1.0, 0.96, 0.88}, 0.65)
 }
 
 func viewpoint(frame int64, rotationSpeed float64, spm int, sphereCount int, cameraTiltDeg float64, zoom float64) (vec3, vec3) {
@@ -392,6 +539,106 @@ func viewpoint(frame int64, rotationSpeed float64, spm int, sphereCount int, cam
 	tilt := cameraTiltDeg * math.Pi / 180.0
 	dir := vec3{math.Cos(tilt) * math.Cos(angle), math.Sin(tilt), math.Cos(tilt) * math.Sin(angle)}
 	target := add(cam, scale(dir, 1.0/clamp(zoom, 0.1, 10.0)))
+	return cam, target
+}
+
+func interestingViewpoint(frame int64, spm int, scn scene, seed float64) (vec3, vec3) {
+	holdFrames := maxInt(2, spm/90)
+	shot := int(frame / int64(holdFrames))
+	timeSec := float64(frame) * (60.0 / float64(maxInt(1, spm)))
+	center := vec3{(scn.floorMinX + scn.floorMaxX) * 0.5, 0.9, (scn.floorMinZ + scn.floorMaxZ) * 0.5}
+
+	maxR := 1.2
+	for _, s := range scn.spheres {
+		d := length(sub(s.c, center)) + s.r
+		if d > maxR {
+			maxR = d
+		}
+	}
+
+	// choose an interesting target point
+	target := center
+	if len(scn.spheres) > 0 {
+		choice := int(clamp((0.5+0.5*signedNoise(seed+41.3, float64(shot)*1.37, 1.0))*4, 0, 3.999))
+		i0 := int(clamp((0.5+0.5*signedNoise(seed+42.1, float64(shot)*1.11, 1.0))*float64(len(scn.spheres)), 0, float64(len(scn.spheres)-1)))
+		i1 := int(clamp((0.5+0.5*signedNoise(seed+42.9, float64(shot)*0.93, 1.0))*float64(len(scn.spheres)), 0, float64(len(scn.spheres)-1)))
+		s0 := scn.spheres[i0].c
+		s1 := scn.spheres[i1].c
+		switch choice {
+		case 0:
+			target = s0
+		case 1:
+			target = scale(add(s0, s1), 0.5)
+		case 2:
+			if scn.lightSphereI >= 0 && scn.lightSphereI < len(scn.spheres) {
+				target = scn.spheres[scn.lightSphereI].c
+			} else {
+				target = s0
+			}
+		default:
+			high := scn.spheres[0].c
+			for _, s := range scn.spheres {
+				if s.c.y > high.y {
+					high = s.c
+				}
+			}
+			target = mix3(high, center, 0.35)
+		}
+	}
+
+	style := int(clamp((0.5+0.5*signedNoise(seed+46.7, float64(shot)*0.73, 1.0))*5, 0, 4.999))
+	az := 2 * math.Pi * clamp(0.5+0.5*signedNoise(seed+43.7, float64(shot)*1.61, 1.0), 0, 1)
+	az += 0.22 * timeSec
+	elev := mix(0.14, 0.95, clamp(0.5+0.5*signedNoise(seed+44.5, float64(shot)*1.23, 1.0), 0, 1))
+	dist := mix(0.95*maxR, 1.65*maxR, clamp(0.5+0.5*signedNoise(seed+45.3, float64(shot)*0.87, 1.0), 0, 1))
+
+	// Style-specific framing: include close zoom-ins and near-ground shots.
+	switch style {
+	case 0: // close-up zoom
+		elev = mix(0.20, 0.65, clamp(0.5+0.5*signedNoise(seed+47.1, float64(shot), 1.0), 0, 1))
+		dist = mix(0.30*maxR, 0.70*maxR, clamp(0.5+0.5*signedNoise(seed+47.9, float64(shot), 1.0), 0, 1))
+	case 1: // very close detail pass
+		elev = mix(0.10, 0.38, clamp(0.5+0.5*signedNoise(seed+48.3, float64(shot), 1.0), 0, 1))
+		dist = mix(0.22*maxR, 0.50*maxR, clamp(0.5+0.5*signedNoise(seed+49.1, float64(shot), 1.0), 0, 1))
+	case 2: // near-ground cinematic
+		elev = mix(0.03, 0.14, clamp(0.5+0.5*signedNoise(seed+49.7, float64(shot), 1.0), 0, 1))
+		dist = mix(0.55*maxR, 1.10*maxR, clamp(0.5+0.5*signedNoise(seed+50.5, float64(shot), 1.0), 0, 1))
+		target.y = clamp(target.y, 0.08, 0.75)
+	case 3: // just-above-ground, wider
+		elev = mix(0.05, 0.20, clamp(0.5+0.5*signedNoise(seed+51.1, float64(shot), 1.0), 0, 1))
+		dist = mix(0.85*maxR, 1.35*maxR, clamp(0.5+0.5*signedNoise(seed+51.9, float64(shot), 1.0), 0, 1))
+		target.y = clamp(target.y, 0.08, 0.90)
+	default: // general interesting orbit
+	}
+
+	horiz := dist * math.Cos(elev)
+	cam := vec3{
+		target.x + horiz*math.Cos(az),
+		target.y + dist*math.Sin(elev),
+		target.z + horiz*math.Sin(az),
+	}
+	if cam.y < 0.14 {
+		cam.y = 0.14
+	}
+	if style == 2 || style == 3 {
+		cam.y = clamp(cam.y, 0.14, 0.55)
+	}
+
+	// keep camera from being too far from the scene and out of the floor bounds
+	pad := 0.85 * maxR
+	cam.x = clamp(cam.x, scn.floorMinX-pad, scn.floorMaxX+pad)
+	cam.z = clamp(cam.z, scn.floorMinZ-pad, scn.floorMaxZ+pad)
+
+	// ensure camera is not inside geometry
+	for _, s := range scn.spheres {
+		d := length(sub(cam, s.c))
+		minD := s.r + 0.45
+		if d < minD && d > 1e-6 {
+			cam = add(s.c, scale(norm(sub(cam, s.c)), minD))
+		}
+	}
+
+	target.y = math.Max(0.08, target.y)
 	return cam, target
 }
 
@@ -461,8 +708,15 @@ func trace(r ray, scn scene, depth int) vec3 {
 	}
 	var col vec3
 	if h.mat == matPlane {
-		col = shadePlane(h, r, scn)
+		col = shadePlane(h, r, scn, depth)
 		return applyDistanceFog(col, h.t, r.d, scn.fogDensity, scn.skyLuminance)
+	}
+	if h.sphereI >= 0 {
+		s := scn.spheres[h.sphereI]
+		if s.emission > 0 {
+			col = gamma(scale(s.albedo, s.emission))
+			return applyDistanceFog(col, h.t, r.d, scn.fogDensity, scn.skyLuminance)
+		}
 	}
 	switch h.mat {
 	case matMirror:
@@ -475,13 +729,20 @@ func trace(r ray, scn scene, depth int) vec3 {
 	return applyDistanceFog(col, h.t, r.d, scn.fogDensity, scn.skyLuminance)
 }
 
-func shadePlane(h hit, r ray, scn scene) vec3 {
+func shadePlane(h hit, r ray, scn scene, depth int) vec3 {
 	base := floorBaseColor(h.p.x, h.p.z)
 	lambert := math.Max(0, dot(h.n, scn.light))
-	shadow := sphereShadow(add(h.p, scale(h.n, 0.02)), scn.light, scn.spheres)
+	shadow := objectShadow(add(h.p, scale(h.n, 0.02)), scn.light, scn.spheres)
 	lambert *= shadow
 	amb := clamp(scn.ambientStrength, 0.12, 1.0)
 	col := add(scale(base, 0.06*amb+0.95*lambert), scale(vec3{0.04, 0.07, 0.12}, 0.08*amb))
+	col = add(col, emissiveSphereContribution(h.p, h.n, scn))
+	reflAmt := clamp(scn.floorReflectivity, 0, 1)
+	if reflAmt > 0 {
+		reflDir := reflect(r.d, h.n)
+		reflCol := trace(ray{o: add(h.p, scale(h.n, 0.01)), d: reflDir}, scn, depth+1)
+		col = mix3(col, reflCol, reflAmt)
+	}
 	return gamma(col)
 }
 
@@ -570,7 +831,7 @@ func shadeMirror(h hit, r ray, scn scene, depth int) vec3 {
 func shadeOpaque(h hit, r ray, scn scene, depth int) vec3 {
 	s := scn.spheres[h.sphereI]
 	lambert := math.Max(0, dot(h.n, scn.light))
-	shadow := sphereShadow(add(h.p, scale(h.n, 0.02)), scn.light, scn.spheres)
+	shadow := objectShadow(add(h.p, scale(h.n, 0.02)), scn.light, scn.spheres)
 	lambert *= shadow
 	amb := clamp(scn.ambientStrength, 0.12, 1.0)
 	view := scale(r.d, -1)
@@ -579,6 +840,7 @@ func shadeOpaque(h hit, r ray, scn scene, depth int) vec3 {
 	spec := math.Pow(math.Max(0, dot(h.n, halfv)), specPow) * (0.05 + 0.95*s.specularity) * shadow
 	refl := trace(ray{o: add(h.p, scale(h.n, 0.01)), d: reflect(r.d, h.n)}, scn, depth+1)
 	base := add(scale(s.albedo, 0.06*amb+0.95*lambert), vec3{spec, spec, spec})
+	base = add(base, emissiveSphereContribution(h.p, h.n, scn))
 	base = add(base, scale(refl, 0.04+0.26*s.specularity))
 
 	transCol := refl
@@ -587,6 +849,30 @@ func shadeOpaque(h hit, r ray, scn scene, depth int) vec3 {
 	}
 	col := mix3(base, mul(transCol, s.albedo), s.translucency)
 	return gamma(col)
+}
+
+func emissiveSphereContribution(p, n vec3, scn scene) vec3 {
+	i := scn.lightSphereI
+	if i < 0 || i >= len(scn.spheres) {
+		return vec3{}
+	}
+	ls := scn.spheres[i]
+	if ls.emission <= 0 {
+		return vec3{}
+	}
+	toL := sub(ls.c, p)
+	d2 := dot(toL, toL)
+	if d2 < 1e-6 {
+		return vec3{}
+	}
+	ld := scale(toL, 1/math.Sqrt(d2))
+	nDotL := math.Max(0, dot(n, ld))
+	if nDotL <= 0 {
+		return vec3{}
+	}
+	shadow := objectShadow(add(p, scale(n, 0.02)), ld, scn.spheres)
+	atten := ls.emission / (1.0 + d2)
+	return scale(ls.albedo, nDotL*shadow*atten)
 }
 
 func shadeTranslucent(h hit, r ray, scn scene, depth int) vec3 {
@@ -623,12 +909,28 @@ func intersectScene(r ray, scn scene) hit {
 		best = hit{t: t, p: p, n: vec3{0, 1, 0}, mat: matPlane, sphereI: -1}
 	}
 	for i, s := range scn.spheres {
-		if t, ok := hitSphere(r, s); ok && t < best.t {
+		if t, n, ok := hitObject(r, s); ok && t < best.t {
 			p := add(r.o, scale(r.d, t))
-			best = hit{t: t, p: p, n: norm(sub(p, s.c)), mat: s.mat, sphereI: i}
+			best = hit{t: t, p: p, n: n, mat: s.mat, sphereI: i}
 		}
 	}
 	return best
+}
+
+func hitObject(r ray, s sphere) (float64, vec3, bool) {
+	switch s.kind {
+	case shapeCube:
+		return hitCube(r, s)
+	case shapePyramid:
+		return hitPyramid(r, s)
+	default:
+		t, ok := hitSphere(r, s)
+		if !ok {
+			return 0, vec3{}, false
+		}
+		p := add(r.o, scale(r.d, t))
+		return t, norm(sub(p, s.c)), true
+	}
 }
 
 func hitSphere(r ray, s sphere) (float64, bool) {
@@ -663,9 +965,9 @@ func hitPlaneY0(r ray) (float64, bool) {
 	return 0, false
 }
 
-func sphereShadow(ro, rd vec3, ss []sphere) float64 {
+func objectShadow(ro, rd vec3, ss []sphere) float64 {
 	for _, s := range ss {
-		if t, ok := hitSphere(ray{o: ro, d: rd}, s); ok && t > 0.001 {
+		if t, _, ok := hitObject(ray{o: ro, d: rd}, s); ok && t > 0.001 {
 			return 0.32
 		}
 	}
@@ -887,14 +1189,22 @@ func (r *gpuRenderer) Render(width, height int, camPos, camTarget vec3, fovDeg f
 			s := scn.spheres[i]
 			putVec4(raw[o:], s.c, s.r)
 			putVec4(raw[propsOffset+i*16:], s.albedo, float64(s.mat))
-			putVec4(raw[coeffOffset+i*16:], vec3{s.specularity, s.translucency, 0}, 0)
+			putVec4(raw[coeffOffset+i*16:], vec3{s.specularity, s.translucency, s.emission}, 0)
+			putVec4(raw[shapeOffset+i*16:], s.half, float64(s.kind))
+			putVec4(raw[basisXOffset+i*16:], s.ux, 0)
+			putVec4(raw[basisYOffset+i*16:], s.uy, 0)
+			putVec4(raw[basisZOffset+i*16:], s.uz, 0)
 		} else {
 			putVec4(raw[o:], vec3{}, 0)
 			putVec4(raw[propsOffset+i*16:], vec3{}, 0)
 			putVec4(raw[coeffOffset+i*16:], vec3{}, 0)
+			putVec4(raw[shapeOffset+i*16:], vec3{}, 0)
+			putVec4(raw[basisXOffset+i*16:], vec3{}, 0)
+			putVec4(raw[basisYOffset+i*16:], vec3{}, 0)
+			putVec4(raw[basisZOffset+i*16:], vec3{}, 0)
 		}
 	}
-	putVec4(raw[extraOffset:], vec3{float64(scn.fogDensity), 0, 0}, float64(scn.pathBounces))
+	putVec4(raw[extraOffset:], vec3{float64(scn.fogDensity), float64(scn.floorReflectivity), 17.0}, float64(scn.pathBounces))
 	if err := r.queue.WriteBuffer(r.paramsBuffer, 0, raw); err != nil {
 		return nil, err
 	}
@@ -1092,6 +1402,171 @@ func mix3(a, b vec3, t float64) vec3 {
 	return vec3{mix(a.x, b.x, t), mix(a.y, b.y, t), mix(a.z, b.z, t)}
 }
 
+func rotateEuler(v, e vec3) vec3 {
+	cx, sx := math.Cos(e.x), math.Sin(e.x)
+	cy, sy := math.Cos(e.y), math.Sin(e.y)
+	cz, sz := math.Cos(e.z), math.Sin(e.z)
+
+	v1 := vec3{v.x, cx*v.y - sx*v.z, sx*v.y + cx*v.z}
+	v2 := vec3{cy*v1.x + sy*v1.z, v1.y, -sy*v1.x + cy*v1.z}
+	return vec3{cz*v2.x - sz*v2.y, sz*v2.x + cz*v2.y, v2.z}
+}
+
+func basisFromEuler(e vec3) (vec3, vec3, vec3) {
+	ux := norm(rotateEuler(vec3{1, 0, 0}, e))
+	uy := norm(rotateEuler(vec3{0, 1, 0}, e))
+	uz := norm(rotateEuler(vec3{0, 0, 1}, e))
+	return ux, uy, uz
+}
+
+func worldToLocal(v, ux, uy, uz vec3) vec3 {
+	return vec3{dot(v, ux), dot(v, uy), dot(v, uz)}
+}
+
+func localToWorld(v, ux, uy, uz vec3) vec3 {
+	return add(add(scale(ux, v.x), scale(uy, v.y)), scale(uz, v.z))
+}
+
+func objectSupportHeight(s sphere) float64 {
+	switch s.kind {
+	case shapeCube:
+		return math.Abs(s.ux.y)*s.half.x + math.Abs(s.uy.y)*s.half.y + math.Abs(s.uz.y)*s.half.z
+	case shapePyramid:
+		verts := [5]vec3{{0, s.half.y, 0}, {-s.half.x, -s.half.y, -s.half.z}, {s.half.x, -s.half.y, -s.half.z}, {s.half.x, -s.half.y, s.half.z}, {-s.half.x, -s.half.y, s.half.z}}
+		minY := 1e9
+		for _, v := range verts {
+			wy := localToWorld(v, s.ux, s.uy, s.uz).y
+			if wy < minY {
+				minY = wy
+			}
+		}
+		return -minY
+	default:
+		return s.r
+	}
+}
+
+func hitCube(r ray, s sphere) (float64, vec3, bool) {
+	ro := worldToLocal(sub(r.o, s.c), s.ux, s.uy, s.uz)
+	rd := worldToLocal(r.d, s.ux, s.uy, s.uz)
+	h := s.half
+
+	tMin, tMax := -1e30, 1e30
+	for axis := 0; axis < 3; axis++ {
+		var roA, rdA, hA float64
+		switch axis {
+		case 0:
+			roA, rdA, hA = ro.x, rd.x, h.x
+		case 1:
+			roA, rdA, hA = ro.y, rd.y, h.y
+		default:
+			roA, rdA, hA = ro.z, rd.z, h.z
+		}
+		if math.Abs(rdA) < 1e-7 {
+			if roA < -hA || roA > hA {
+				return 0, vec3{}, false
+			}
+			continue
+		}
+		t1 := (-hA - roA) / rdA
+		t2 := (hA - roA) / rdA
+		if t1 > t2 {
+			t1, t2 = t2, t1
+		}
+		if t1 > tMin {
+			tMin = t1
+		}
+		if t2 < tMax {
+			tMax = t2
+		}
+		if tMin > tMax {
+			return 0, vec3{}, false
+		}
+	}
+
+	t := tMin
+	if t < 0.001 {
+		t = tMax
+	}
+	if t < 0.001 {
+		return 0, vec3{}, false
+	}
+	pl := add(ro, scale(rd, t))
+	localN := vec3{}
+	dx := math.Abs(math.Abs(pl.x) - h.x)
+	dy := math.Abs(math.Abs(pl.y) - h.y)
+	dz := math.Abs(math.Abs(pl.z) - h.z)
+	if dx <= dy && dx <= dz {
+		localN = vec3{math.Copysign(1, pl.x), 0, 0}
+	} else if dy <= dz {
+		localN = vec3{0, math.Copysign(1, pl.y), 0}
+	} else {
+		localN = vec3{0, 0, math.Copysign(1, pl.z)}
+	}
+	n := norm(localToWorld(localN, s.ux, s.uy, s.uz))
+	if dot(n, r.d) > 0 {
+		n = scale(n, -1)
+	}
+	return t, n, true
+}
+
+func hitTriangle(ro, rd, a, b, c vec3) (float64, vec3, bool) {
+	e1 := sub(b, a)
+	e2 := sub(c, a)
+	p := cross(rd, e2)
+	det := dot(e1, p)
+	if math.Abs(det) < 1e-8 {
+		return 0, vec3{}, false
+	}
+	inv := 1.0 / det
+	tv := sub(ro, a)
+	u := dot(tv, p) * inv
+	if u < 0 || u > 1 {
+		return 0, vec3{}, false
+	}
+	q := cross(tv, e1)
+	v := dot(rd, q) * inv
+	if v < 0 || u+v > 1 {
+		return 0, vec3{}, false
+	}
+	t := dot(e2, q) * inv
+	if t < 0.001 {
+		return 0, vec3{}, false
+	}
+	n := norm(cross(e1, e2))
+	return t, n, true
+}
+
+func hitPyramid(r ray, s sphere) (float64, vec3, bool) {
+	ro := worldToLocal(sub(r.o, s.c), s.ux, s.uy, s.uz)
+	rd := worldToLocal(r.d, s.ux, s.uy, s.uz)
+
+	a := vec3{0, s.half.y, 0}
+	b0 := vec3{-s.half.x, -s.half.y, -s.half.z}
+	b1 := vec3{s.half.x, -s.half.y, -s.half.z}
+	b2 := vec3{s.half.x, -s.half.y, s.half.z}
+	b3 := vec3{-s.half.x, -s.half.y, s.half.z}
+
+	tris := [][3]vec3{{a, b0, b1}, {a, b1, b2}, {a, b2, b3}, {a, b3, b0}, {b0, b2, b1}, {b0, b3, b2}}
+	bestT := 1e30
+	bestN := vec3{}
+	for _, tri := range tris {
+		t, n, ok := hitTriangle(ro, rd, tri[0], tri[1], tri[2])
+		if ok && t < bestT {
+			bestT = t
+			bestN = n
+		}
+	}
+	if bestT >= 1e29 {
+		return 0, vec3{}, false
+	}
+	n := norm(localToWorld(bestN, s.ux, s.uy, s.uz))
+	if dot(n, r.d) > 0 {
+		n = scale(n, -1)
+	}
+	return bestT, n, true
+}
+
 const spheresComputeWGSL = `
 struct Params {
     width: u32,
@@ -1106,6 +1581,10 @@ struct Params {
 	spheres: array<vec4<f32>, 50>,
 	sphere_props: array<vec4<f32>, 50>,
 	sphere_coeff: array<vec4<f32>, 50>,
+	shape_data: array<vec4<f32>, 50>,
+	basis_x: array<vec4<f32>, 50>,
+	basis_y: array<vec4<f32>, 50>,
+	basis_z: array<vec4<f32>, 50>,
 	board_rect: vec4<f32>,
 };
 
@@ -1173,7 +1652,7 @@ fn fbm_perlin2(seed: f32, x: f32, z: f32, octaves: i32, lacunarity: f32, gain: f
 }
 
 fn floor_base_color(x: f32, z: f32) -> vec3<f32> {
-	let floor_kind = u32(params.board_rect.y + 0.5);
+	let floor_kind = 0u;
 	let floor_seed = params.board_rect.z;
 	if floor_kind == 1u {
 		let wx = x + 1.8 * perlin2(floor_seed + 0.9, x * 0.30, z * 0.30);
@@ -1236,6 +1715,172 @@ fn sphere_hit(ro: vec3<f32>, rd: vec3<f32>, s: vec4<f32>) -> f32 {
     return -1.0;
 }
 
+fn world_to_local(v: vec3<f32>, ux: vec3<f32>, uy: vec3<f32>, uz: vec3<f32>) -> vec3<f32> {
+	return vec3<f32>(dot(v, ux), dot(v, uy), dot(v, uz));
+}
+
+fn local_to_world(v: vec3<f32>, ux: vec3<f32>, uy: vec3<f32>, uz: vec3<f32>) -> vec3<f32> {
+	return ux * v.x + uy * v.y + uz * v.z;
+}
+
+struct ObjHit {
+	t: f32,
+	n: vec3<f32>,
+	ok: bool,
+};
+
+fn hit_cube(ro_w: vec3<f32>, rd_w: vec3<f32>, idx: u32) -> ObjHit {
+	let c = params.spheres[idx].xyz;
+	let h = params.shape_data[idx].xyz;
+	let ux = normalize(params.basis_x[idx].xyz);
+	let uy = normalize(params.basis_y[idx].xyz);
+	let uz = normalize(params.basis_z[idx].xyz);
+	let ro = world_to_local(ro_w - c, ux, uy, uz);
+	let rd = world_to_local(rd_w, ux, uy, uz);
+
+	var t_min = -1e30;
+	var t_max = 1e30;
+	for (var axis: i32 = 0; axis < 3; axis = axis + 1) {
+		let ro_a = select(select(ro.x, ro.y, axis == 1), ro.z, axis == 2);
+		let rd_a = select(select(rd.x, rd.y, axis == 1), rd.z, axis == 2);
+		let h_a = select(select(h.x, h.y, axis == 1), h.z, axis == 2);
+		if abs(rd_a) < 1e-7 {
+			if ro_a < -h_a || ro_a > h_a {
+				return ObjHit(0.0, vec3<f32>(0.0), false);
+			}
+			continue;
+		}
+		var t1 = (-h_a - ro_a) / rd_a;
+		var t2 = (h_a - ro_a) / rd_a;
+		if t1 > t2 {
+			let tt = t1;
+			t1 = t2;
+			t2 = tt;
+		}
+		t_min = max(t_min, t1);
+		t_max = min(t_max, t2);
+		if t_min > t_max {
+			return ObjHit(0.0, vec3<f32>(0.0), false);
+		}
+	}
+
+	var t = t_min;
+	if t < 0.001 {
+		t = t_max;
+	}
+	if t < 0.001 {
+		return ObjHit(0.0, vec3<f32>(0.0), false);
+	}
+
+	let pl = ro + rd * t;
+	let dx = abs(abs(pl.x) - h.x);
+	let dy = abs(abs(pl.y) - h.y);
+	let dz = abs(abs(pl.z) - h.z);
+	var local_n = vec3<f32>(0.0);
+	if dx <= dy && dx <= dz {
+		local_n = vec3<f32>(sign(pl.x), 0.0, 0.0);
+	} else if dy <= dz {
+		local_n = vec3<f32>(0.0, sign(pl.y), 0.0);
+	} else {
+		local_n = vec3<f32>(0.0, 0.0, sign(pl.z));
+	}
+	var n = normalize(local_to_world(local_n, ux, uy, uz));
+	if dot(n, rd_w) > 0.0 {
+		n = -n;
+	}
+	return ObjHit(t, n, true);
+}
+
+struct TriHit {
+	t: f32,
+	n: vec3<f32>,
+	ok: bool,
+};
+
+fn hit_triangle(ro: vec3<f32>, rd: vec3<f32>, a: vec3<f32>, b: vec3<f32>, c: vec3<f32>) -> TriHit {
+	let e1 = b - a;
+	let e2 = c - a;
+	let p = cross(rd, e2);
+	let det = dot(e1, p);
+	if abs(det) < 1e-8 {
+		return TriHit(0.0, vec3<f32>(0.0), false);
+	}
+	let inv = 1.0 / det;
+	let tv = ro - a;
+	let u = dot(tv, p) * inv;
+	if u < 0.0 || u > 1.0 {
+		return TriHit(0.0, vec3<f32>(0.0), false);
+	}
+	let q = cross(tv, e1);
+	let v = dot(rd, q) * inv;
+	if v < 0.0 || u + v > 1.0 {
+		return TriHit(0.0, vec3<f32>(0.0), false);
+	}
+	let t = dot(e2, q) * inv;
+	if t < 0.001 {
+		return TriHit(0.0, vec3<f32>(0.0), false);
+	}
+	return TriHit(t, normalize(cross(e1, e2)), true);
+}
+
+fn hit_pyramid(ro_w: vec3<f32>, rd_w: vec3<f32>, idx: u32) -> ObjHit {
+	let c = params.spheres[idx].xyz;
+	let h = params.shape_data[idx].xyz;
+	let ux = normalize(params.basis_x[idx].xyz);
+	let uy = normalize(params.basis_y[idx].xyz);
+	let uz = normalize(params.basis_z[idx].xyz);
+	let ro = world_to_local(ro_w - c, ux, uy, uz);
+	let rd = world_to_local(rd_w, ux, uy, uz);
+
+	let a = vec3<f32>(0.0, h.y, 0.0);
+	let b0 = vec3<f32>(-h.x, -h.y, -h.z);
+	let b1 = vec3<f32>(h.x, -h.y, -h.z);
+	let b2 = vec3<f32>(h.x, -h.y, h.z);
+	let b3 = vec3<f32>(-h.x, -h.y, h.z);
+
+	var best_t = 1e30;
+	var best_n = vec3<f32>(0.0, 1.0, 0.0);
+
+	let t0 = hit_triangle(ro, rd, a, b0, b1);
+	if t0.ok && t0.t < best_t { best_t = t0.t; best_n = t0.n; }
+	let t1 = hit_triangle(ro, rd, a, b1, b2);
+	if t1.ok && t1.t < best_t { best_t = t1.t; best_n = t1.n; }
+	let t2 = hit_triangle(ro, rd, a, b2, b3);
+	if t2.ok && t2.t < best_t { best_t = t2.t; best_n = t2.n; }
+	let t3 = hit_triangle(ro, rd, a, b3, b0);
+	if t3.ok && t3.t < best_t { best_t = t3.t; best_n = t3.n; }
+	let t4 = hit_triangle(ro, rd, b0, b2, b1);
+	if t4.ok && t4.t < best_t { best_t = t4.t; best_n = t4.n; }
+	let t5 = hit_triangle(ro, rd, b0, b3, b2);
+	if t5.ok && t5.t < best_t { best_t = t5.t; best_n = t5.n; }
+
+	if best_t >= 1e29 {
+		return ObjHit(0.0, vec3<f32>(0.0), false);
+	}
+	var n = normalize(local_to_world(best_n, ux, uy, uz));
+	if dot(n, rd_w) > 0.0 {
+		n = -n;
+	}
+	return ObjHit(best_t, n, true);
+}
+
+fn hit_object(ro: vec3<f32>, rd: vec3<f32>, idx: u32) -> ObjHit {
+	let kind = i32(params.shape_data[idx].w + 0.5);
+	if kind == 1 {
+		return hit_cube(ro, rd, idx);
+	}
+	if kind == 2 {
+		return hit_pyramid(ro, rd, idx);
+	}
+	let t = sphere_hit(ro, rd, params.spheres[idx]);
+	if t <= 0.0 {
+		return ObjHit(0.0, vec3<f32>(0.0), false);
+	}
+	let p = ro + rd * t;
+	let n = normalize(p - params.spheres[idx].xyz);
+	return ObjHit(t, n, true);
+}
+
 struct Hit {
 	t: f32,
 	mat: u32,
@@ -1289,14 +1934,14 @@ fn scene_hit(ro: vec3<f32>, rd: vec3<f32>) -> Hit {
 	}
 
 	for (var i: u32 = 0u; i < params.sphere_count; i = i + 1u) {
-		let t = sphere_hit(ro, rd, params.spheres[i]);
-		if t > 0.0 && t < h.t {
-			let p = ro + rd * t;
-			h.t = t;
+		let oh = hit_object(ro, rd, i);
+		if oh.ok && oh.t < h.t {
+			let p = ro + rd * oh.t;
+			h.t = oh.t;
 			h.mat = u32(params.sphere_props[i].w + 0.5);
 			h.idx = i;
 			h.p = p;
-			h.n = normalize(p - params.spheres[i].xyz);
+			h.n = oh.n;
 		}
 	}
 	return h;
@@ -1304,8 +1949,8 @@ fn scene_hit(ro: vec3<f32>, rd: vec3<f32>) -> Hit {
 
 fn in_shadow(ro: vec3<f32>, rd: vec3<f32>) -> bool {
 	for (var i: u32 = 0u; i < params.sphere_count; i = i + 1u) {
-		let t = sphere_hit(ro, rd, params.spheres[i]);
-		if t > 0.001 {
+		let oh = hit_object(ro, rd, i);
+		if oh.ok && oh.t > 0.001 {
 			return true;
 		}
 	}
@@ -1333,6 +1978,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let spp = max(1u, params.spp);
 	let max_bounces = max(1u, u32(params.board_rect.w + 0.5));
 	let fog_density = max(0.0, params.board_rect.x);
+	let floor_reflectivity = clamp01(params.board_rect.y);
 
 	var accum = vec3<f32>(0.0);
 	for (var s: u32 = 0u; s < spp; s = s + 1u) {
@@ -1368,15 +2014,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 				if nl > 0.0 && !in_shadow(h.p + h.n * 0.02, params.light_dir.xyz) {
 					radiance = radiance + throughput * albedo * (0.10 * ambient_strength + 0.40 * nl);
 				}
-				throughput = throughput * albedo;
+				let refl = reflect(rd, h.n);
+				let diffuse = cosine_sample_hemisphere(h.n, &rng);
+				rd = normalize(mix(diffuse, refl, floor_reflectivity));
+				throughput = throughput * mix(albedo, vec3<f32>(1.0), 0.65 * floor_reflectivity);
 				ro = h.p + h.n * 0.01;
-				rd = cosine_sample_hemisphere(h.n, &rng);
 			} else {
 				let albedo = params.sphere_props[h.idx].xyz;
-				let coeff = params.sphere_coeff[h.idx].xy;
+				let coeff = params.sphere_coeff[h.idx].xyz;
 				let specularity = clamp01(coeff.x);
 				let translucency = clamp01(coeff.y);
+				let emission = max(0.0, coeff.z);
 				let n = h.n;
+
+				if emission > 0.0 {
+					radiance = radiance + throughput * albedo * emission;
+					break;
+				}
 
 				if h.mat == 2u {
 					let refl = reflect(rd, n);
